@@ -24,9 +24,9 @@ pub type Envelope {
   Envelope(choice: option.Option(EnvelopeChoice))
 }
 
-pub fn encode_envelope(envelope: Envelope) -> BitArray {
+pub fn encode_envelope(message: Envelope) -> BitArray {
   encode.message([
-    case envelope.choice {
+    case message.choice {
       option.Some(oneof_value) -> {
         case oneof_value {
           EnvelopeChoiceNumber(value) -> encode.int32_field(1, value)
@@ -44,9 +44,9 @@ pub fn encode_envelope(envelope: Envelope) -> BitArray {
   ])
 }
 
-pub fn encode_detail(detail: Detail) -> BitArray {
+pub fn encode_detail(message: Detail) -> BitArray {
   encode.message([
-    encode.string_field(1, detail.text),
+    encode.string_field(1, message.text),
   ])
 }
 

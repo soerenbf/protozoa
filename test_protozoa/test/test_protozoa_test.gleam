@@ -1,5 +1,5 @@
 import generated_app.{
-  ACTIVE, AppAppMessage, BaseBaseMessage, decode_app_app_message,
+  Active, AppAppMessage, BaseBaseMessage, decode_app_app_message,
   decode_base_base_message, encode_app_app_message, encode_base_base_message,
 }
 import generated_service.{
@@ -10,8 +10,10 @@ import generated_service.{
 }
 import generated_types.{
   TypesAllTypes, TypesRepeatedTypes, decode_types_all_types,
-  decode_types_repeated_types, encode_types_all_types, encode_types_repeated_types,
+  decode_types_repeated_types, encode_types_all_types,
+  encode_types_repeated_types,
 }
+import gleam/option.{Some}
 import gleeunit
 
 pub fn main() {
@@ -21,24 +23,25 @@ pub fn main() {
 // ---- App/Base message tests (tests imports and enums) ----
 
 pub fn base_message_roundtrip_test() {
-  let msg = BaseBaseMessage(id: "test-123", status: ACTIVE)
+  let msg = BaseBaseMessage(id: "test-123", status: Active)
   let encoded = encode_base_base_message(msg)
   let assert Ok(decoded) = decode_base_base_message(encoded)
 
   let assert "test-123" = decoded.id
-  let assert ACTIVE = decoded.status
+  let assert Active = decoded.status
 }
 
 pub fn app_message_with_nested_roundtrip_test() {
-  let base = BaseBaseMessage(id: "nested-id", status: ACTIVE)
-  let app = AppAppMessage(base: base, status: ACTIVE)
+  let base = BaseBaseMessage(id: "nested-id", status: Active)
+  let app = AppAppMessage(base: Some(base), status: Active)
 
   let encoded = encode_app_app_message(app)
   let assert Ok(decoded) = decode_app_app_message(encoded)
 
-  let assert "nested-id" = decoded.base.id
-  let assert ACTIVE = decoded.base.status
-  let assert ACTIVE = decoded.status
+  let assert Some(decoded_base) = decoded.base
+  let assert "nested-id" = decoded_base.id
+  let assert Active = decoded_base.status
+  let assert Active = decoded.status
 }
 
 // ---- Service tests ----

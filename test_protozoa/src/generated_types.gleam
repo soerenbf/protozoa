@@ -52,55 +52,86 @@ pub type TypesMapTypes {
   )
 }
 
-pub fn encode_types_map_types(types_map_types: TypesMapTypes) -> BitArray {
-  let string_map_fields = list.map(types_map_types.string_map, fn(pair) { let #(key, value) = pair
-    encode.field(1, wire.LengthDelimited, encode.length_delimited(encode.message([encode.string_field(1, key), encode.string_field(2, value)]))) })
-  let int_map_fields = list.map(types_map_types.int_map, fn(pair) { let #(key, value) = pair
-    encode.field(2, wire.LengthDelimited, encode.length_delimited(encode.message([encode.int32_field(1, key), encode.string_field(2, value)]))) })
+pub fn encode_types_map_types(message: TypesMapTypes) -> BitArray {
+  let string_map_fields =
+    list.map(message.string_map, fn(pair) {
+      let #(key, value) = pair
+      encode.field(
+        1,
+        wire.LengthDelimited,
+        encode.length_delimited(
+          encode.message([
+            encode.string_field(1, key),
+            encode.string_field(2, value),
+          ]),
+        ),
+      )
+    })
+  let int_map_fields =
+    list.map(message.int_map, fn(pair) {
+      let #(key, value) = pair
+      encode.field(
+        2,
+        wire.LengthDelimited,
+        encode.length_delimited(
+          encode.message([
+            encode.int32_field(1, key),
+            encode.string_field(2, value),
+          ]),
+        ),
+      )
+    })
   encode.message(list.flatten([string_map_fields, int_map_fields]))
 }
 
-pub fn encode_types_optional_types(types_optional_types: TypesOptionalTypes) -> BitArray {
+pub fn encode_types_optional_types(message: TypesOptionalTypes) -> BitArray {
   encode.message([
-    case types_optional_types.maybe_string {
+    case message.maybe_string {
       option.Some(value) -> encode.string_field(1, value)
       option.None -> <<>>
     },
-    case types_optional_types.maybe_number {
+    case message.maybe_number {
       option.Some(value) -> encode.int32_field(2, value)
       option.None -> <<>>
     },
   ])
 }
 
-pub fn encode_types_repeated_types(types_repeated_types: TypesRepeatedTypes) -> BitArray {
-  let strings_fields = list.map(types_repeated_types.strings, fn(v) { encode.string_field(1, v) })
-  let numbers_fields = list.map(types_repeated_types.numbers, fn(v) { encode.int32_field(2, v) })
-  let flags_fields = list.map(types_repeated_types.flags, fn(v) { encode.bool_field(3, v) })
+pub fn encode_types_repeated_types(message: TypesRepeatedTypes) -> BitArray {
+  let strings_fields =
+    list.map(message.strings, fn(v) { encode.string_field(1, v) })
+  let numbers_fields =
+    list.map(message.numbers, fn(v) { encode.int32_field(2, v) })
+  let flags_fields = list.map(message.flags, fn(v) { encode.bool_field(3, v) })
   encode.message(list.flatten([strings_fields, numbers_fields, flags_fields]))
 }
 
-pub fn encode_types_all_types(types_all_types: TypesAllTypes) -> BitArray {
+pub fn encode_types_all_types(message: TypesAllTypes) -> BitArray {
   encode.message([
-    encode.double_field(1, types_all_types.double_field),
-    encode.float_field(2, types_all_types.float_field),
-    encode.int32_field(3, types_all_types.int32_field),
-    encode.int64_field(4, types_all_types.int64_field),
-    encode.uint32_field(5, types_all_types.uint32_field),
-    encode.uint64_field(6, types_all_types.uint64_field),
-    encode.sint32_field(7, types_all_types.sint32_field),
-    encode.sint64_field(8, types_all_types.sint64_field),
-    encode.fixed32_field(9, types_all_types.fixed32_field),
-    encode.fixed64_field(10, types_all_types.fixed64_field),
-    encode.sfixed32_field(11, types_all_types.sfixed32_field),
-    encode.sfixed64_field(12, types_all_types.sfixed64_field),
-    encode.bool_field(13, types_all_types.bool_field),
-    encode.string_field(14, types_all_types.string_field),
-    encode.field(15, wire.LengthDelimited, encode.length_delimited(types_all_types.bytes_field)),
+    encode.double_field(1, message.double_field),
+    encode.float_field(2, message.float_field),
+    encode.int32_field(3, message.int32_field),
+    encode.int64_field(4, message.int64_field),
+    encode.uint32_field(5, message.uint32_field),
+    encode.uint64_field(6, message.uint64_field),
+    encode.sint32_field(7, message.sint32_field),
+    encode.sint64_field(8, message.sint64_field),
+    encode.fixed32_field(9, message.fixed32_field),
+    encode.fixed64_field(10, message.fixed64_field),
+    encode.sfixed32_field(11, message.sfixed32_field),
+    encode.sfixed64_field(12, message.sfixed64_field),
+    encode.bool_field(13, message.bool_field),
+    encode.string_field(14, message.string_field),
+    encode.field(
+      15,
+      wire.LengthDelimited,
+      encode.length_delimited(message.bytes_field),
+    ),
   ])
 }
 
-fn types_map_types_map_entry_1_decoder() -> fn(decode.Field) -> Result(#(String, String), decode.DecodeError) {
+fn types_map_types_map_entry_1_decoder() -> fn(decode.Field) ->
+  Result(#(String, String), decode.DecodeError) {
   fn(field) {
     let entry_decoder = {
       use key <- decode.then(decode.string_with_default(1, ""))
@@ -114,7 +145,8 @@ fn types_map_types_map_entry_1_decoder() -> fn(decode.Field) -> Result(#(String,
   }
 }
 
-fn types_map_types_map_entry_2_decoder() -> fn(decode.Field) -> Result(#(Int, String), decode.DecodeError) {
+fn types_map_types_map_entry_2_decoder() -> fn(decode.Field) ->
+  Result(#(Int, String), decode.DecodeError) {
   fn(field) {
     let entry_decoder = {
       use key <- decode.then(decode.int32_with_default(1, 0))
@@ -129,39 +161,78 @@ fn types_map_types_map_entry_2_decoder() -> fn(decode.Field) -> Result(#(Int, St
 }
 
 pub fn types_map_types_decoder() -> decode.Decoder(TypesMapTypes) {
-  use string_map <- decode.then(decode.repeated_field(1, fn(field) { types_map_types_map_entry_1_decoder()(field) }))
-  use int_map <- decode.then(decode.repeated_field(2, fn(field) { types_map_types_map_entry_2_decoder()(field) }))
+  use string_map <- decode.then(decode.map(
+    decode.repeated_field(1, fn(field) {
+      types_map_types_map_entry_1_decoder()(field)
+    }),
+    decode.map_entries,
+  ))
+  use int_map <- decode.then(decode.map(
+    decode.repeated_field(2, fn(field) {
+      types_map_types_map_entry_2_decoder()(field)
+    }),
+    decode.map_entries,
+  ))
   decode.success(TypesMapTypes(string_map: string_map, int_map: int_map))
 }
 
-pub fn decode_types_map_types(data: BitArray) -> Result(TypesMapTypes, List(decode.DecodeError)) {
+pub fn decode_types_map_types(
+  data: BitArray,
+) -> Result(TypesMapTypes, List(decode.DecodeError)) {
   decode.run(data, types_map_types_decoder())
 }
 
 pub fn types_optional_types_decoder() -> decode.Decoder(TypesOptionalTypes) {
-  use maybe_string <- decode.then(decode.map(decode.optional_field(1, decode.string_field), option.from_result))
-  use maybe_number <- decode.then(decode.map(decode.optional_field(2, decode.int32_field), option.from_result))
-  decode.success(TypesOptionalTypes(maybe_string: maybe_string, maybe_number: maybe_number))
+  use maybe_string <- decode.then(decode.map(
+    decode.optional_field(1, decode.string_field),
+    option.from_result,
+  ))
+  use maybe_number <- decode.then(decode.map(
+    decode.optional_field(2, decode.int32_field),
+    option.from_result,
+  ))
+  decode.success(TypesOptionalTypes(
+    maybe_string: maybe_string,
+    maybe_number: maybe_number,
+  ))
 }
 
-pub fn decode_types_optional_types(data: BitArray) -> Result(TypesOptionalTypes, List(decode.DecodeError)) {
+pub fn decode_types_optional_types(
+  data: BitArray,
+) -> Result(TypesOptionalTypes, List(decode.DecodeError)) {
   decode.run(data, types_optional_types_decoder())
 }
 
 pub fn types_repeated_types_decoder() -> decode.Decoder(TypesRepeatedTypes) {
   use strings <- decode.then(decode.repeated_string(1))
   use numbers <- decode.then(decode.repeated_int32(2))
-  use flags <- decode.then(decode.repeated_field(3, fn(field) { decode.bool_field(field) }))
-  decode.success(TypesRepeatedTypes(strings: strings, numbers: numbers, flags: flags))
+  use flags <- decode.then(
+    decode.repeated_field(3, fn(field) { decode.bool_field(field) }),
+  )
+  decode.success(TypesRepeatedTypes(
+    strings: strings,
+    numbers: numbers,
+    flags: flags,
+  ))
 }
 
-pub fn decode_types_repeated_types(data: BitArray) -> Result(TypesRepeatedTypes, List(decode.DecodeError)) {
+pub fn decode_types_repeated_types(
+  data: BitArray,
+) -> Result(TypesRepeatedTypes, List(decode.DecodeError)) {
   decode.run(data, types_repeated_types_decoder())
 }
 
 pub fn types_all_types_decoder() -> decode.Decoder(TypesAllTypes) {
-  use double_field <- decode.then(decode.double(1))
-  use float_field <- decode.then(decode.float(2))
+  use double_field <- decode.then(decode.field_with_default(
+    1,
+    decode.double_field,
+    0.0,
+  ))
+  use float_field <- decode.then(decode.field_with_default(
+    2,
+    decode.float_field,
+    0.0,
+  ))
   use int32_field <- decode.then(decode.int32_with_default(3, 0))
   use int64_field <- decode.then(decode.int64_with_default(4, 0))
   use uint32_field <- decode.then(decode.uint32_with_default(5, 0))
@@ -174,7 +245,9 @@ pub fn types_all_types_decoder() -> decode.Decoder(TypesAllTypes) {
   use sfixed64_field <- decode.then(decode.sfixed64(12))
   use bool_field <- decode.then(decode.bool_with_default(13, False))
   use string_field <- decode.then(decode.string_with_default(14, ""))
-  use bytes_field <- decode.then(decode.bytes(15))
+  use bytes_field <- decode.then(
+    decode.field_with_default(15, decode.bytes_field, <<>>),
+  )
   decode.success(TypesAllTypes(
     double_field: double_field,
     float_field: float_field,
@@ -194,6 +267,8 @@ pub fn types_all_types_decoder() -> decode.Decoder(TypesAllTypes) {
   ))
 }
 
-pub fn decode_types_all_types(data: BitArray) -> Result(TypesAllTypes, List(decode.DecodeError)) {
+pub fn decode_types_all_types(
+  data: BitArray,
+) -> Result(TypesAllTypes, List(decode.DecodeError)) {
   decode.run(data, types_all_types_decoder())
 }

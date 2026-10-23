@@ -10,19 +10,31 @@ import protozoa/encode
 import protozoa/wire
 
 pub type ValuesFields {
-  ValuesFields(
-    values: List(#(String, String)),
-    label: String,
-  )
+  ValuesFields(values: List(#(String, String)), label: String)
 }
 
 pub fn encode_values_fields(message: ValuesFields) -> BitArray {
-  let values_fields = list.map(message.values, fn(pair) { let #(key, value) = pair
-    encode.field(1, wire.LengthDelimited, encode.length_delimited(encode.message([encode.string_field(1, key), encode.string_field(2, value)]))) })
-  encode.message(list.flatten([values_fields, [encode.string_field(2, message.label)]]))
+  let values_fields =
+    list.map(message.values, fn(pair) {
+      let #(key, value) = pair
+      encode.field(
+        1,
+        wire.LengthDelimited,
+        encode.length_delimited(
+          encode.message([
+            encode.string_field(1, key),
+            encode.string_field(2, value),
+          ]),
+        ),
+      )
+    })
+  encode.message(
+    list.flatten([values_fields, [encode.string_field(2, message.label)]]),
+  )
 }
 
-fn values_fields_map_entry_1_decoder() -> fn(decode.Field) -> Result(#(String, String), decode.DecodeError) {
+fn values_fields_map_entry_1_decoder() -> fn(decode.Field) ->
+  Result(#(String, String), decode.DecodeError) {
   fn(field) {
     let entry_decoder = {
       use key <- decode.then(decode.string_with_default(1, ""))
@@ -38,11 +50,18 @@ fn values_fields_map_entry_1_decoder() -> fn(decode.Field) -> Result(#(String, S
 
 pub fn values_fields_decoder() -> decode.Decoder(ValuesFields) {
   use _ <- decode.then(decode.success(Nil))
-  use values <- decode.then(decode.map(decode.repeated_field(1, fn(field) { values_fields_map_entry_1_decoder()(field) }), decode.map_entries))
+  use values <- decode.then(decode.map(
+    decode.repeated_field(1, fn(field) {
+      values_fields_map_entry_1_decoder()(field)
+    }),
+    decode.map_entries,
+  ))
   use label <- decode.then(decode.string_with_default(2, ""))
   decode.success(ValuesFields(values: values, label: label))
 }
 
-pub fn decode_values_fields(data: BitArray) -> Result(ValuesFields, List(decode.DecodeError)) {
+pub fn decode_values_fields(
+  data: BitArray,
+) -> Result(ValuesFields, List(decode.DecodeError)) {
   decode.run(data, values_fields_decoder())
 }

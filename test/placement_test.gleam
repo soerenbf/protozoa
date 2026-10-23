@@ -46,7 +46,7 @@ pub fn local_collisions_test() {
     "message Envelope { message Item {} } message EnvelopeItem {}",
     "Envelope.Item",
   )
-  reject("enum A { ZERO = 0; } message ZERO {} message AZERO {}", "A.ZERO")
+  reject("enum A { ZERO = 0; } message Zero {} message AZero {}", "A.ZERO")
   reject("message HTTP {} message Http {}", "HTTP")
   reject(
     "message Envelope { oneof item { string text = 1; } } message EnvelopeItem {}",
@@ -60,15 +60,15 @@ pub fn local_collisions_test() {
     )
   let assert Ok(_) = placement.plan(local, ["local.proto"], "gen")
   let local_ctx = types.new_local_ctx(local, "local.proto")
-  let assert "AZERO" = types.enum_constructor("A", "ZERO", local_ctx)
-  let assert "BZERO" = types.enum_constructor("B", "ZERO", local_ctx)
+  let assert "AZero" = types.enum_constructor("A", "ZERO", local_ctx)
+  let assert "BZero" = types.enum_constructor("B", "ZERO", local_ctx)
   let registry =
     type_registry.new()
     |> add("a.proto", "package a; enum State { ZERO = 0; }")
     |> add("b.proto", "package b; enum State { ZERO = 0; }")
   let assert Ok(_) = placement.plan(registry, ["a.proto", "b.proto"], "gen")
   let ctx = types.new_local_ctx(registry, "a.proto")
-  let assert "ZERO" = types.enum_constructor("State", "ZERO", ctx)
+  let assert "Zero" = types.enum_constructor("State", "ZERO", ctx)
   let assert "State" = types.qualified_type("State", ctx)
   let assert "state" = types.qualified_fn("State", ctx)
 }

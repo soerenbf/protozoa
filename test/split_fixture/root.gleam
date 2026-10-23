@@ -37,52 +37,186 @@ pub type Root {
 }
 
 pub fn encode_root(message: Root) -> BitArray {
-  let states_fields = list.map(message.states, fn(v) { encode.int32_field(6, pb_module_0.encode_envelope_state_value(v)) })
-  let items_fields = list.map(message.items, fn(v) { encode.field(7, wire.LengthDelimited, encode.length_delimited(pb_module_0.encode_envelope_item(v))) })
-  let items_by_name_fields = list.map(message.items_by_name, fn(pair) { let #(key, value) = pair
-    encode.field(8, wire.LengthDelimited, encode.length_delimited(encode.message([encode.string_field(1, key), encode.field(2, wire.LengthDelimited, encode.length_delimited(pb_module_0.encode_envelope_item(value)))]))) })
-  let states_by_name_fields = list.map(message.states_by_name, fn(pair) { let #(key, value) = pair
-    encode.field(9, wire.LengthDelimited, encode.length_delimited(encode.message([encode.string_field(1, key), encode.int32_field(2, pb_module_0.encode_envelope_state_value(value))]))) })
-  let values_fields = list.map(message.values, fn(pair) { let #(key, value) = pair
-    encode.field(13, wire.LengthDelimited, encode.length_delimited(encode.message([encode.string_field(1, key), encode.field(2, wire.LengthDelimited, encode.length_delimited(pb_module_0.encode_value(value)))]))) })
-  encode.message(list.flatten([states_fields, items_fields, items_by_name_fields, states_by_name_fields, values_fields, [case message.item {
-      option.Some(value) -> encode.field(1, wire.LengthDelimited, encode.length_delimited(pb_module_0.encode_envelope_item(value)))
-      option.None -> <<>>
-    }], [case message.other {
-      option.Some(value) -> encode.field(2, wire.LengthDelimited, encode.length_delimited(pb_module_1.encode_item(value)))
-      option.None -> <<>>
-    }], [case message.token {
-      option.Some(value) -> encode.field(3, wire.LengthDelimited, encode.length_delimited(pb_module_2.encode_token(value)))
-      option.None -> <<>>
-    }], [encode.int32_field(4, pb_module_0.encode_envelope_state_value(message.state))], [case message.optional_state {
-      option.Some(value) -> encode.int32_field(5, pb_module_0.encode_envelope_state_value(value))
-      option.None -> <<>>
-    }], [case message.next {
-      option.Some(value) -> encode.field(10, wire.LengthDelimited, encode.length_delimited(encode_root(value)))
-      option.None -> <<>>
-    }], [case message.pick {
-      option.Some(oneof_value) -> {
-        case oneof_value {
-      RootPickChosen(value) -> encode.field(11, wire.LengthDelimited, encode.length_delimited(pb_module_0.encode_envelope_item(value)))
-      RootPickStatus(value) -> encode.int32_field(12, pb_module_0.encode_envelope_state_value(value))
-        }
-      }
-      option.None -> <<>>
-    }]]))
+  let states_fields =
+    list.map(message.states, fn(v) {
+      encode.int32_field(6, pb_module_0.encode_envelope_state_value(v))
+    })
+  let items_fields =
+    list.map(message.items, fn(v) {
+      encode.field(
+        7,
+        wire.LengthDelimited,
+        encode.length_delimited(pb_module_0.encode_envelope_item(v)),
+      )
+    })
+  let items_by_name_fields =
+    list.map(message.items_by_name, fn(pair) {
+      let #(key, value) = pair
+      encode.field(
+        8,
+        wire.LengthDelimited,
+        encode.length_delimited(
+          encode.message([
+            encode.string_field(1, key),
+            encode.field(
+              2,
+              wire.LengthDelimited,
+              encode.length_delimited(pb_module_0.encode_envelope_item(value)),
+            ),
+          ]),
+        ),
+      )
+    })
+  let states_by_name_fields =
+    list.map(message.states_by_name, fn(pair) {
+      let #(key, value) = pair
+      encode.field(
+        9,
+        wire.LengthDelimited,
+        encode.length_delimited(
+          encode.message([
+            encode.string_field(1, key),
+            encode.int32_field(
+              2,
+              pb_module_0.encode_envelope_state_value(value),
+            ),
+          ]),
+        ),
+      )
+    })
+  let values_fields =
+    list.map(message.values, fn(pair) {
+      let #(key, value) = pair
+      encode.field(
+        13,
+        wire.LengthDelimited,
+        encode.length_delimited(
+          encode.message([
+            encode.string_field(1, key),
+            encode.field(
+              2,
+              wire.LengthDelimited,
+              encode.length_delimited(pb_module_0.encode_value(value)),
+            ),
+          ]),
+        ),
+      )
+    })
+  encode.message(
+    list.flatten([
+      states_fields,
+      items_fields,
+      items_by_name_fields,
+      states_by_name_fields,
+      values_fields,
+      [
+        case message.item {
+          option.Some(value) ->
+            encode.field(
+              1,
+              wire.LengthDelimited,
+              encode.length_delimited(pb_module_0.encode_envelope_item(value)),
+            )
+          option.None -> <<>>
+        },
+      ],
+      [
+        case message.other {
+          option.Some(value) ->
+            encode.field(
+              2,
+              wire.LengthDelimited,
+              encode.length_delimited(pb_module_1.encode_item(value)),
+            )
+          option.None -> <<>>
+        },
+      ],
+      [
+        case message.token {
+          option.Some(value) ->
+            encode.field(
+              3,
+              wire.LengthDelimited,
+              encode.length_delimited(pb_module_2.encode_token(value)),
+            )
+          option.None -> <<>>
+        },
+      ],
+      [
+        encode.int32_field(
+          4,
+          pb_module_0.encode_envelope_state_value(message.state),
+        ),
+      ],
+      [
+        case message.optional_state {
+          option.Some(value) ->
+            encode.int32_field(
+              5,
+              pb_module_0.encode_envelope_state_value(value),
+            )
+          option.None -> <<>>
+        },
+      ],
+      [
+        case message.next {
+          option.Some(value) ->
+            encode.field(
+              10,
+              wire.LengthDelimited,
+              encode.length_delimited(encode_root(value)),
+            )
+          option.None -> <<>>
+        },
+      ],
+      [
+        case message.pick {
+          option.Some(oneof_value) -> {
+            case oneof_value {
+              RootPickChosen(value) ->
+                encode.field(
+                  11,
+                  wire.LengthDelimited,
+                  encode.length_delimited(pb_module_0.encode_envelope_item(
+                    value,
+                  )),
+                )
+              RootPickStatus(value) ->
+                encode.int32_field(
+                  12,
+                  pb_module_0.encode_envelope_state_value(value),
+                )
+            }
+          }
+          option.None -> <<>>
+        },
+      ],
+    ]),
+  )
 }
 
 fn oneof_root_pick_decoder() -> decode.Decoder(option.Option(RootPick)) {
   decode.oneof([
-    #(11, wire.LengthDelimited, True, fn(field) { decode.message_field(_, pb_module_0.envelope_item_decoder())(field) |> result.map(RootPickChosen) }),
-    #(12, wire.Varint, False, fn(field) { pb_module_0.decode_envelope_state_from_field(field) |> result.map(RootPickStatus) }),
+    #(11, wire.LengthDelimited, True, fn(field) {
+      decode.message_field(_, pb_module_0.envelope_item_decoder())(field)
+      |> result.map(RootPickChosen)
+    }),
+    #(12, wire.Varint, False, fn(field) {
+      pb_module_0.decode_envelope_state_from_field(field)
+      |> result.map(RootPickStatus)
+    }),
   ])
 }
 
-fn root_map_entry_8_decoder() -> fn(decode.Field) -> Result(#(String, pb_module_0.EnvelopeItem), decode.DecodeError) {
+fn root_map_entry_8_decoder() -> fn(decode.Field) ->
+  Result(#(String, pb_module_0.EnvelopeItem), decode.DecodeError) {
   fn(field) {
     let entry_decoder = {
       use key <- decode.then(decode.string_with_default(1, ""))
-      use value <- decode.then(decode.nested_message_with_default(2, pb_module_0.envelope_item_decoder()))
+      use value <- decode.then(decode.nested_message_with_default(
+        2,
+        pb_module_0.envelope_item_decoder(),
+      ))
       decode.success(#(key, value))
     }
     case decode.message_field(_, entry_decoder)(field) {
@@ -92,7 +226,8 @@ fn root_map_entry_8_decoder() -> fn(decode.Field) -> Result(#(String, pb_module_
   }
 }
 
-fn root_map_entry_9_decoder() -> fn(decode.Field) -> Result(#(String, pb_module_0.EnvelopeState), decode.DecodeError) {
+fn root_map_entry_9_decoder() -> fn(decode.Field) ->
+  Result(#(String, pb_module_0.EnvelopeState), decode.DecodeError) {
   fn(field) {
     let entry_decoder = {
       use key <- decode.then(decode.string_with_default(1, ""))
@@ -106,11 +241,15 @@ fn root_map_entry_9_decoder() -> fn(decode.Field) -> Result(#(String, pb_module_
   }
 }
 
-fn root_map_entry_13_decoder() -> fn(decode.Field) -> Result(#(String, pb_module_0.Value), decode.DecodeError) {
+fn root_map_entry_13_decoder() -> fn(decode.Field) ->
+  Result(#(String, pb_module_0.Value), decode.DecodeError) {
   fn(field) {
     let entry_decoder = {
       use key <- decode.then(decode.string_with_default(1, ""))
-      use value <- decode.then(decode.nested_message_with_default(2, pb_module_0.value_decoder()))
+      use value <- decode.then(decode.nested_message_with_default(
+        2,
+        pb_module_0.value_decoder(),
+      ))
       decode.success(#(key, value))
     }
     case decode.message_field(_, entry_decoder)(field) {
@@ -122,17 +261,45 @@ fn root_map_entry_13_decoder() -> fn(decode.Field) -> Result(#(String, pb_module
 
 pub fn root_decoder() -> decode.Decoder(Root) {
   use _ <- decode.then(decode.success(Nil))
-  use item <- decode.then(decode.map(decode.optional_nested_message(1, pb_module_0.envelope_item_decoder()), option.from_result))
-  use other <- decode.then(decode.map(decode.optional_nested_message(2, pb_module_1.item_decoder()), option.from_result))
-  use token <- decode.then(decode.map(decode.optional_nested_message(3, pb_module_2.token_decoder()), option.from_result))
+  use item <- decode.then(decode.map(
+    decode.optional_nested_message(1, pb_module_0.envelope_item_decoder()),
+    option.from_result,
+  ))
+  use other <- decode.then(decode.map(
+    decode.optional_nested_message(2, pb_module_1.item_decoder()),
+    option.from_result,
+  ))
+  use token <- decode.then(decode.map(
+    decode.optional_nested_message(3, pb_module_2.token_decoder()),
+    option.from_result,
+  ))
   use state <- decode.then(pb_module_0.decode_envelope_state_field(4))
-  use optional_state <- decode.then(decode.map(decode.optional_field(5, pb_module_0.decode_envelope_state_from_field), option.from_result))
+  use optional_state <- decode.then(decode.map(
+    decode.optional_field(5, pb_module_0.decode_envelope_state_from_field),
+    option.from_result,
+  ))
   use states <- decode.then(pb_module_0.decode_repeated_envelope_state(6))
-  use items <- decode.then(decode.repeated_field(7, fn(field) { decode.message_field(_, pb_module_0.envelope_item_decoder())(field) }))
-  use items_by_name <- decode.then(decode.map(decode.repeated_field(8, fn(field) { root_map_entry_8_decoder()(field) }), decode.map_entries))
-  use states_by_name <- decode.then(decode.map(decode.repeated_field(9, fn(field) { root_map_entry_9_decoder()(field) }), decode.map_entries))
-  use values <- decode.then(decode.map(decode.repeated_field(13, fn(field) { root_map_entry_13_decoder()(field) }), decode.map_entries))
-  use next <- decode.then(decode.map(decode.optional_nested_message(10, root_decoder()), option.from_result))
+  use items <- decode.then(
+    decode.repeated_field(7, fn(field) {
+      decode.message_field(_, pb_module_0.envelope_item_decoder())(field)
+    }),
+  )
+  use items_by_name <- decode.then(decode.map(
+    decode.repeated_field(8, fn(field) { root_map_entry_8_decoder()(field) }),
+    decode.map_entries,
+  ))
+  use states_by_name <- decode.then(decode.map(
+    decode.repeated_field(9, fn(field) { root_map_entry_9_decoder()(field) }),
+    decode.map_entries,
+  ))
+  use values <- decode.then(decode.map(
+    decode.repeated_field(13, fn(field) { root_map_entry_13_decoder()(field) }),
+    decode.map_entries,
+  ))
+  use next <- decode.then(decode.map(
+    decode.optional_nested_message(10, root_decoder()),
+    option.from_result,
+  ))
   use pick <- decode.then(oneof_root_pick_decoder())
   decode.success(Root(
     item: item,

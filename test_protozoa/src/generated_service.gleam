@@ -8,44 +8,52 @@ import protozoa/decode
 import protozoa/encode
 
 pub type TestserviceTestRequest {
-  TestserviceTestRequest(
-    data: String,
-  )
+  TestserviceTestRequest(data: String)
 }
 
 pub type TestserviceTestResponse {
-  TestserviceTestResponse(
-    result: String,
-  )
+  TestserviceTestResponse(result: String)
 }
 
-pub fn encode_testservice_test_response(testservice_test_response: TestserviceTestResponse) -> BitArray {
+pub fn encode_testservice_test_response(
+  message: TestserviceTestResponse,
+) -> BitArray {
   encode.message([
-    encode.string_field(1, testservice_test_response.result),
+    encode.string_field(1, message.result),
   ])
 }
 
-pub fn encode_testservice_test_request(testservice_test_request: TestserviceTestRequest) -> BitArray {
+pub fn encode_testservice_test_request(
+  message: TestserviceTestRequest,
+) -> BitArray {
   encode.message([
-    encode.string_field(1, testservice_test_request.data),
+    encode.string_field(1, message.data),
   ])
 }
 
-pub fn testservice_test_response_decoder() -> decode.Decoder(TestserviceTestResponse) {
+pub fn testservice_test_response_decoder() -> decode.Decoder(
+  TestserviceTestResponse,
+) {
   use result <- decode.then(decode.string_with_default(1, ""))
   decode.success(TestserviceTestResponse(result: result))
 }
 
-pub fn decode_testservice_test_response(data: BitArray) -> Result(TestserviceTestResponse, List(decode.DecodeError)) {
+pub fn decode_testservice_test_response(
+  data: BitArray,
+) -> Result(TestserviceTestResponse, List(decode.DecodeError)) {
   decode.run(data, testservice_test_response_decoder())
 }
 
-pub fn testservice_test_request_decoder() -> decode.Decoder(TestserviceTestRequest) {
+pub fn testservice_test_request_decoder() -> decode.Decoder(
+  TestserviceTestRequest,
+) {
   use data <- decode.then(decode.string_with_default(1, ""))
   decode.success(TestserviceTestRequest(data: data))
 }
 
-pub fn decode_testservice_test_request(data: BitArray) -> Result(TestserviceTestRequest, List(decode.DecodeError)) {
+pub fn decode_testservice_test_request(
+  data: BitArray,
+) -> Result(TestserviceTestRequest, List(decode.DecodeError)) {
   decode.run(data, testservice_test_request_decoder())
 }
 
@@ -75,11 +83,13 @@ pub type TestServiceRequestError {
   /// Handler returned an error
   TestServiceHandlerError(TestServiceError)
 }
+
 /// Service function for Process
 /// Handles protobuf encoding/decoding, returns encoded response or error
 pub fn process_service(
   request_bytes: BitArray,
-  handler: fn(TestserviceTestRequest) -> Result(TestserviceTestResponse, TestServiceError),
+  handler: fn(TestserviceTestRequest) ->
+    Result(TestserviceTestResponse, TestServiceError),
 ) -> Result(BitArray, TestServiceRequestError) {
   case decode.run(request_bytes, with: testservice_test_request_decoder()) {
     Ok(proto_request) -> {
@@ -88,6 +98,7 @@ pub fn process_service(
         Error(err) -> Error(TestServiceHandlerError(err))
       }
     }
-    Error(_) -> Error(TestServiceDecodeError("Failed to decode TestserviceTestRequest"))
+    Error(_) ->
+      Error(TestServiceDecodeError("Failed to decode TestserviceTestRequest"))
   }
 }

@@ -15,7 +15,7 @@ pub fn cross_file_roundtrip_test() {
       item: None,
       other: None,
       token: None,
-      state: a.ZERO,
+      state: a.Zero,
       optional_state: None,
       states: [],
       items: [],
@@ -30,19 +30,19 @@ pub fn cross_file_roundtrip_test() {
       item: Some(item),
       other: Some(b.Item(number: 42)),
       token: Some(token.Token(text: "runtime alias")),
-      state: a.READY,
-      optional_state: Some(a.ZERO),
-      states: [a.ZERO, a.READY],
+      state: a.Ready,
+      optional_state: Some(a.Zero),
+      states: [a.Zero, a.Ready],
       items: [item],
       items_by_name: [#("item", item)],
-      states_by_name: [#("ready", a.READY)],
+      states_by_name: [#("ready", a.Ready)],
       values: [#("ordinary", a.Value(text: "not a well-known value"))],
       next: Some(leaf),
       pick: Some(root.RootPickChosen(item)),
     )
   let assert Ok(decoded) = root.decode_root(root.encode_root(value))
   let assert True = decoded == value
-  let value = root.Root(..value, pick: Some(root.RootPickStatus(a.READY)))
+  let value = root.Root(..value, pick: Some(root.RootPickStatus(a.Ready)))
   let assert Ok(decoded) = root.decode_root(root.encode_root(value))
   let assert True = decoded == value
   let assert Ok(decoded) = root.decode_root(root.encode_root(leaf))

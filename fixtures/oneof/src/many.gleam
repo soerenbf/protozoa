@@ -73,9 +73,9 @@ pub type Many {
   Many(choice: option.Option(ManyChoice))
 }
 
-pub fn encode_many(many: Many) -> BitArray {
+pub fn encode_many(message: Many) -> BitArray {
   encode.message([
-    case many.choice {
+    case message.choice {
       option.Some(oneof_value) -> {
         case oneof_value {
           ManyChoicePick01(value) -> encode.int32_field(1, value)

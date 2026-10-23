@@ -18,9 +18,9 @@ import protozoa/encode
 import protozoa/wire
 
 pub type BaseStatus {
-  UNKNOWN
-  ACTIVE
-  INACTIVE
+  Unknown
+  Active
+  Inactive
 }
 
 pub type AppMessage {
@@ -76,9 +76,9 @@ pub fn decode_base_message(data: BitArray) -> Result(BaseMessage, List(decode.De
 
 pub fn encode_base_status_value(value: BaseStatus) -> Int {
   case value {
-    UNKNOWN -> 0
-    ACTIVE -> 1
-    INACTIVE -> 2
+    Unknown -> 0
+    Active -> 1
+    Inactive -> 2
   }
 }
 
@@ -86,19 +86,19 @@ pub fn decode_base_status_field(field_num: Int) -> decode.Decoder(BaseStatus) {
   decode.field_with_default(field_num, fn(field) {
     use value <- result.try(decode.int32_field(field))
     case value {
-          0 -> Ok(UNKNOWN)
-          1 -> Ok(ACTIVE)
-          2 -> Ok(INACTIVE)
+          0 -> Ok(Unknown)
+          1 -> Ok(Active)
+          2 -> Ok(Inactive)
       _ -> Error(decode.DecodeError(expected: "valid base_status value", found: "Unknown base_status value: " <> string.inspect(value), path: []))
     }
-  }, UNKNOWN)
+  }, Unknown)
 }
 
 pub fn decode_base_status_value(value: Int) -> Result(BaseStatus, String) {
   case value {
-    0 -> Ok(UNKNOWN)
-    1 -> Ok(ACTIVE)
-    2 -> Ok(INACTIVE)
+    0 -> Ok(Unknown)
+    1 -> Ok(Active)
+    2 -> Ok(Inactive)
     _ -> Error("Unknown base_status value: " <> int.to_string(value))
   }
 }

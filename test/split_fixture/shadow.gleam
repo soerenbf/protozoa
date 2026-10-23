@@ -10,15 +10,11 @@ import protozoa/encode
 import protozoa/wire
 
 pub type X {
-  X(
-    text: String,
-  )
+  X(text: String)
 }
 
 pub type PX {
-  PX(
-    number: Int,
-  )
+  PX(number: Int)
 }
 
 pub type P {
@@ -26,15 +22,18 @@ pub type P {
 }
 
 pub type Root {
-  Root(
-    x: option.Option(X),
-  )
+  Root(x: option.Option(X))
 }
 
 pub fn encode_root(message: Root) -> BitArray {
   encode.message([
     case message.x {
-      option.Some(value) -> encode.field(1, wire.LengthDelimited, encode.length_delimited(encode_x(value)))
+      option.Some(value) ->
+        encode.field(
+          1,
+          wire.LengthDelimited,
+          encode.length_delimited(encode_x(value)),
+        )
       option.None -> <<>>
     },
   ])
@@ -58,7 +57,10 @@ pub fn encode_x(message: X) -> BitArray {
 
 pub fn root_decoder() -> decode.Decoder(Root) {
   use _ <- decode.then(decode.success(Nil))
-  use x <- decode.then(decode.map(decode.optional_nested_message(1, x_decoder()), option.from_result))
+  use x <- decode.then(decode.map(
+    decode.optional_nested_message(1, x_decoder()),
+    option.from_result,
+  ))
   decode.success(Root(x: x))
 }
 

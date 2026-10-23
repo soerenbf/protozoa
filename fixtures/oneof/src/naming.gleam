@@ -14,13 +14,13 @@ import protozoa/encode
 import protozoa/wire
 
 pub type SampleBaseChildV0 {
-  SampleBaseChildV0ZERO
-  SampleBaseChildV0ONE
+  SampleBaseChildV0Zero
+  SampleBaseChildV0One
 }
 
 pub type SampleBaseChildUnique {
-  DISTINCT
-  OTHER
+  Distinct
+  Other
 }
 
 pub type SampleBaseChildColliding {
@@ -61,8 +61,8 @@ pub type SampleBaseChildFirstMiddle {
 }
 
 pub type SampleBaseChildFirstState {
-  SampleBaseChildFirstStateZERO
-  SampleBaseChildFirstStateONE
+  SampleBaseChildFirstStateZero
+  SampleBaseChildFirstStateOne
 }
 
 pub type SampleBaseChildFirstResponse {
@@ -86,8 +86,8 @@ pub type SampleBaseChildSecondInner {
 }
 
 pub type SampleBaseChildSecondState {
-  SampleBaseChildSecondStateZERO
-  SampleBaseChildSecondStateONE
+  SampleBaseChildSecondStateZero
+  SampleBaseChildSecondStateOne
 }
 
 pub type SampleBaseChildSecondResponse {
@@ -102,17 +102,17 @@ pub type SampleBaseChildSecond {
   )
 }
 
-pub fn encode_sample_base_item(sample_base_item: SampleBaseItem) -> BitArray {
+pub fn encode_sample_base_item(message: SampleBaseItem) -> BitArray {
   encode.message([
-    encode.int32_field(1, sample_base_item.value),
+    encode.int32_field(1, message.value),
   ])
 }
 
 pub fn encode_sample_base_child_second(
-  sample_base_child_second: SampleBaseChildSecond,
+  message: SampleBaseChildSecond,
 ) -> BitArray {
   encode.message([
-    case sample_base_child_second.state {
+    case message.state {
       option.Some(value) ->
         encode.int32_field(
           1,
@@ -120,7 +120,7 @@ pub fn encode_sample_base_child_second(
         )
       option.None -> <<>>
     },
-    case sample_base_child_second.response {
+    case message.response {
       option.Some(oneof_value) -> {
         case oneof_value {
           SampleBaseChildSecondResponseV0(value) ->
@@ -144,18 +144,18 @@ pub fn encode_sample_base_child_second(
 }
 
 pub fn encode_sample_base_child_second_inner(
-  sample_base_child_second_inner: SampleBaseChildSecondInner,
+  message: SampleBaseChildSecondInner,
 ) -> BitArray {
   encode.message([
-    encode.bool_field(1, sample_base_child_second_inner.type_),
+    encode.bool_field(1, message.type_),
   ])
 }
 
 pub fn encode_sample_base_child_first(
-  sample_base_child_first: SampleBaseChildFirst,
+  message: SampleBaseChildFirst,
 ) -> BitArray {
   let children_fields =
-    list.map(sample_base_child_first.children, fn(v) {
+    list.map(message.children, fn(v) {
       encode.field(
         2,
         wire.LengthDelimited,
@@ -163,11 +163,11 @@ pub fn encode_sample_base_child_first(
       )
     })
   let states_fields =
-    list.map(sample_base_child_first.states, fn(v) {
+    list.map(message.states, fn(v) {
       encode.int32_field(4, encode_sample_base_child_first_state_value(v))
     })
   let entries_fields =
-    list.map(sample_base_child_first.entries, fn(pair) {
+    list.map(message.entries, fn(pair) {
       let #(key, value) = pair
       encode.field(
         3,
@@ -187,7 +187,7 @@ pub fn encode_sample_base_child_first(
       )
     })
   let flags_fields =
-    list.map(sample_base_child_first.flags, fn(pair) {
+    list.map(message.flags, fn(pair) {
       let #(key, value) = pair
       encode.field(
         5,
@@ -210,7 +210,7 @@ pub fn encode_sample_base_child_first(
       entries_fields,
       flags_fields,
       [
-        case sample_base_child_first.state {
+        case message.state {
           option.Some(value) ->
             encode.int32_field(
               1,
@@ -220,7 +220,7 @@ pub fn encode_sample_base_child_first(
         },
       ],
       [
-        case sample_base_child_first.response {
+        case message.response {
           option.Some(oneof_value) -> {
             case oneof_value {
               SampleBaseChildFirstResponseV0(value) ->
@@ -246,16 +246,16 @@ pub fn encode_sample_base_child_first(
 }
 
 pub fn encode_sample_base_child_first_middle(
-  _sample_base_child_first_middle: SampleBaseChildFirstMiddle,
+  _message: SampleBaseChildFirstMiddle,
 ) -> BitArray {
   encode.message([])
 }
 
 pub fn encode_sample_base_child_first_middle_deep(
-  sample_base_child_first_middle_deep: SampleBaseChildFirstMiddleDeep,
+  message: SampleBaseChildFirstMiddleDeep,
 ) -> BitArray {
   encode.message([
-    case sample_base_child_first_middle_deep.nearest {
+    case message.nearest {
       option.Some(value) ->
         encode.field(
           1,
@@ -266,7 +266,7 @@ pub fn encode_sample_base_child_first_middle_deep(
         )
       option.None -> <<>>
     },
-    case sample_base_child_first_middle_deep.parent {
+    case message.parent {
       option.Some(value) ->
         encode.field(
           2,
@@ -275,7 +275,7 @@ pub fn encode_sample_base_child_first_middle_deep(
         )
       option.None -> <<>>
     },
-    case sample_base_child_first_middle_deep.sibling {
+    case message.sibling {
       option.Some(value) ->
         encode.field(
           3,
@@ -284,7 +284,7 @@ pub fn encode_sample_base_child_first_middle_deep(
         )
       option.None -> <<>>
     },
-    case sample_base_child_first_middle_deep.absolute {
+    case message.absolute {
       option.Some(value) ->
         encode.field(
           4,
@@ -293,7 +293,7 @@ pub fn encode_sample_base_child_first_middle_deep(
         )
       option.None -> <<>>
     },
-    case sample_base_child_first_middle_deep.ancestor {
+    case message.ancestor {
       option.Some(value) ->
         encode.field(
           5,
@@ -302,7 +302,7 @@ pub fn encode_sample_base_child_first_middle_deep(
         )
       option.None -> <<>>
     },
-    case sample_base_child_first_middle_deep.shadow {
+    case message.shadow {
       option.Some(value) ->
         encode.field(
           7,
@@ -313,7 +313,7 @@ pub fn encode_sample_base_child_first_middle_deep(
         )
       option.None -> <<>>
     },
-    case sample_base_child_first_middle_deep.state {
+    case message.state {
       option.Some(value) ->
         encode.int32_field(6, encode_sample_base_child_first_state_value(value))
       option.None -> <<>>
@@ -322,26 +322,26 @@ pub fn encode_sample_base_child_first_middle_deep(
 }
 
 pub fn encode_sample_base_child_first_middle_deep_item(
-  sample_base_child_first_middle_deep_item: SampleBaseChildFirstMiddleDeepItem,
+  message: SampleBaseChildFirstMiddleDeepItem,
 ) -> BitArray {
   encode.message([
-    encode.string_field(1, sample_base_child_first_middle_deep_item.local),
+    encode.string_field(1, message.local),
   ])
 }
 
 pub fn encode_sample_base_child_first_middle_inner(
-  sample_base_child_first_middle_inner: SampleBaseChildFirstMiddleInner,
+  message: SampleBaseChildFirstMiddleInner,
 ) -> BitArray {
   encode.message([
-    encode.string_field(1, sample_base_child_first_middle_inner.micro_ccd),
+    encode.string_field(1, message.micro_ccd),
   ])
 }
 
 pub fn encode_sample_base_child_first_inner(
-  sample_base_child_first_inner: SampleBaseChildFirstInner,
+  message: SampleBaseChildFirstInner,
 ) -> BitArray {
   encode.message([
-    encode.int32_field(1, sample_base_child_first_inner.specification_hash),
+    encode.int32_field(1, message.specification_hash),
   ])
 }
 
@@ -598,8 +598,8 @@ pub fn decode_sample_base_child_first_inner(
 
 pub fn encode_sample_base_child_v0_value(value: SampleBaseChildV0) -> Int {
   case value {
-    SampleBaseChildV0ZERO -> 0
-    SampleBaseChildV0ONE -> 1
+    SampleBaseChildV0Zero -> 0
+    SampleBaseChildV0One -> 1
   }
 }
 
@@ -611,8 +611,8 @@ pub fn decode_sample_base_child_v0_field(
     fn(field) {
       use value <- result.try(decode.int32_field(field))
       case value {
-        0 -> Ok(SampleBaseChildV0ZERO)
-        1 -> Ok(SampleBaseChildV0ONE)
+        0 -> Ok(SampleBaseChildV0Zero)
+        1 -> Ok(SampleBaseChildV0One)
         _ ->
           Error(
             decode.DecodeError(
@@ -624,7 +624,7 @@ pub fn decode_sample_base_child_v0_field(
           )
       }
     },
-    SampleBaseChildV0ZERO,
+    SampleBaseChildV0Zero,
   )
 }
 
@@ -632,8 +632,8 @@ pub fn decode_sample_base_child_v0_value(
   value: Int,
 ) -> Result(SampleBaseChildV0, String) {
   case value {
-    0 -> Ok(SampleBaseChildV0ZERO)
-    1 -> Ok(SampleBaseChildV0ONE)
+    0 -> Ok(SampleBaseChildV0Zero)
+    1 -> Ok(SampleBaseChildV0One)
     _ -> Error("Unknown sample_base_child_v0 value: " <> int.to_string(value))
   }
 }
@@ -652,8 +652,8 @@ pub fn encode_sample_base_child_unique_value(
   value: SampleBaseChildUnique,
 ) -> Int {
   case value {
-    DISTINCT -> 0
-    OTHER -> 1
+    Distinct -> 0
+    Other -> 1
   }
 }
 
@@ -665,8 +665,8 @@ pub fn decode_sample_base_child_unique_field(
     fn(field) {
       use value <- result.try(decode.int32_field(field))
       case value {
-        0 -> Ok(DISTINCT)
-        1 -> Ok(OTHER)
+        0 -> Ok(Distinct)
+        1 -> Ok(Other)
         _ ->
           Error(
             decode.DecodeError(
@@ -678,7 +678,7 @@ pub fn decode_sample_base_child_unique_field(
           )
       }
     },
-    DISTINCT,
+    Distinct,
   )
 }
 
@@ -686,8 +686,8 @@ pub fn decode_sample_base_child_unique_value(
   value: Int,
 ) -> Result(SampleBaseChildUnique, String) {
   case value {
-    0 -> Ok(DISTINCT)
-    1 -> Ok(OTHER)
+    0 -> Ok(Distinct)
+    1 -> Ok(Other)
     _ ->
       Error("Unknown sample_base_child_unique value: " <> int.to_string(value))
   }
@@ -764,8 +764,8 @@ pub fn encode_sample_base_child_first_state_value(
   value: SampleBaseChildFirstState,
 ) -> Int {
   case value {
-    SampleBaseChildFirstStateZERO -> 0
-    SampleBaseChildFirstStateONE -> 1
+    SampleBaseChildFirstStateZero -> 0
+    SampleBaseChildFirstStateOne -> 1
   }
 }
 
@@ -777,8 +777,8 @@ pub fn decode_sample_base_child_first_state_field(
     fn(field) {
       use value <- result.try(decode.int32_field(field))
       case value {
-        0 -> Ok(SampleBaseChildFirstStateZERO)
-        1 -> Ok(SampleBaseChildFirstStateONE)
+        0 -> Ok(SampleBaseChildFirstStateZero)
+        1 -> Ok(SampleBaseChildFirstStateOne)
         _ ->
           Error(
             decode.DecodeError(
@@ -790,7 +790,7 @@ pub fn decode_sample_base_child_first_state_field(
           )
       }
     },
-    SampleBaseChildFirstStateZERO,
+    SampleBaseChildFirstStateZero,
   )
 }
 
@@ -799,8 +799,8 @@ fn decode_sample_base_child_first_state_from_field(
 ) -> Result(SampleBaseChildFirstState, decode.DecodeError) {
   use value <- result.try(decode.int32_field(field))
   case value {
-    0 -> Ok(SampleBaseChildFirstStateZERO)
-    1 -> Ok(SampleBaseChildFirstStateONE)
+    0 -> Ok(SampleBaseChildFirstStateZero)
+    1 -> Ok(SampleBaseChildFirstStateOne)
     _ ->
       Error(
         decode.DecodeError(
@@ -817,8 +817,8 @@ pub fn decode_sample_base_child_first_state_value(
   value: Int,
 ) -> Result(SampleBaseChildFirstState, String) {
   case value {
-    0 -> Ok(SampleBaseChildFirstStateZERO)
-    1 -> Ok(SampleBaseChildFirstStateONE)
+    0 -> Ok(SampleBaseChildFirstStateZero)
+    1 -> Ok(SampleBaseChildFirstStateOne)
     _ ->
       Error(
         "Unknown sample_base_child_first_state value: " <> int.to_string(value),
@@ -840,8 +840,8 @@ pub fn encode_sample_base_child_second_state_value(
   value: SampleBaseChildSecondState,
 ) -> Int {
   case value {
-    SampleBaseChildSecondStateZERO -> 0
-    SampleBaseChildSecondStateONE -> 1
+    SampleBaseChildSecondStateZero -> 0
+    SampleBaseChildSecondStateOne -> 1
   }
 }
 
@@ -853,8 +853,8 @@ pub fn decode_sample_base_child_second_state_field(
     fn(field) {
       use value <- result.try(decode.int32_field(field))
       case value {
-        0 -> Ok(SampleBaseChildSecondStateZERO)
-        1 -> Ok(SampleBaseChildSecondStateONE)
+        0 -> Ok(SampleBaseChildSecondStateZero)
+        1 -> Ok(SampleBaseChildSecondStateOne)
         _ ->
           Error(
             decode.DecodeError(
@@ -866,7 +866,7 @@ pub fn decode_sample_base_child_second_state_field(
           )
       }
     },
-    SampleBaseChildSecondStateZERO,
+    SampleBaseChildSecondStateZero,
   )
 }
 
@@ -875,8 +875,8 @@ fn decode_sample_base_child_second_state_from_field(
 ) -> Result(SampleBaseChildSecondState, decode.DecodeError) {
   use value <- result.try(decode.int32_field(field))
   case value {
-    0 -> Ok(SampleBaseChildSecondStateZERO)
-    1 -> Ok(SampleBaseChildSecondStateONE)
+    0 -> Ok(SampleBaseChildSecondStateZero)
+    1 -> Ok(SampleBaseChildSecondStateOne)
     _ ->
       Error(
         decode.DecodeError(
@@ -893,8 +893,8 @@ pub fn decode_sample_base_child_second_state_value(
   value: Int,
 ) -> Result(SampleBaseChildSecondState, String) {
   case value {
-    0 -> Ok(SampleBaseChildSecondStateZERO)
-    1 -> Ok(SampleBaseChildSecondStateONE)
+    0 -> Ok(SampleBaseChildSecondStateZero)
+    1 -> Ok(SampleBaseChildSecondStateOne)
     _ ->
       Error(
         "Unknown sample_base_child_second_state value: " <> int.to_string(value),

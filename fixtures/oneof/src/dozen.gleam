@@ -29,9 +29,9 @@ pub type Dozen {
   Dozen(choice: option.Option(DozenChoice))
 }
 
-pub fn encode_dozen(dozen: Dozen) -> BitArray {
+pub fn encode_dozen(message: Dozen) -> BitArray {
   encode.message([
-    case dozen.choice {
+    case message.choice {
       option.Some(oneof_value) -> {
         case oneof_value {
           DozenChoicePick01(value) -> encode.int32_field(1, value)

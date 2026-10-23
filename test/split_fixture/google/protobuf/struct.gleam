@@ -14,13 +14,11 @@ import protozoa/encode
 import protozoa/wire
 
 pub type NullValue {
-  NULLVALUE
+  NullValue
 }
 
 pub type Struct {
-  Struct(
-    fields: List(#(String, Value)),
-  )
+  Struct(fields: List(#(String, Value)))
 }
 
 pub type ValueKind {
@@ -33,19 +31,22 @@ pub type ValueKind {
 }
 
 pub type Value {
-  Value(
-    kind: option.Option(ValueKind),
-  )
+  Value(kind: option.Option(ValueKind))
 }
 
 pub type ListValue {
-  ListValue(
-    values: List(Value),
-  )
+  ListValue(values: List(Value))
 }
 
 pub fn encode_list_value(message: ListValue) -> BitArray {
-  let values_fields = list.map(message.values, fn(v) { encode.field(1, wire.LengthDelimited, encode.length_delimited(encode_value(v))) })
+  let values_fields =
+    list.map(message.values, fn(v) {
+      encode.field(
+        1,
+        wire.LengthDelimited,
+        encode.length_delimited(encode_value(v)),
+      )
+    })
   encode.message(values_fields)
 }
 
@@ -54,12 +55,23 @@ pub fn encode_value(message: Value) -> BitArray {
     case message.kind {
       option.Some(oneof_value) -> {
         case oneof_value {
-      ValueKindNullValue(value) -> encode.int32_field(1, encode_null_value_value(value))
-      ValueKindNumberValue(value) -> encode.double_field(2, value)
-      ValueKindStringValue(value) -> encode.string_field(3, value)
-      ValueKindBoolValue(value) -> encode.bool_field(4, value)
-      ValueKindStructValue(value) -> encode.field(5, wire.LengthDelimited, encode.length_delimited(encode_struct(value)))
-      ValueKindListValue(value) -> encode.field(6, wire.LengthDelimited, encode.length_delimited(encode_list_value(value)))
+          ValueKindNullValue(value) ->
+            encode.int32_field(1, encode_null_value_value(value))
+          ValueKindNumberValue(value) -> encode.double_field(2, value)
+          ValueKindStringValue(value) -> encode.string_field(3, value)
+          ValueKindBoolValue(value) -> encode.bool_field(4, value)
+          ValueKindStructValue(value) ->
+            encode.field(
+              5,
+              wire.LengthDelimited,
+              encode.length_delimited(encode_struct(value)),
+            )
+          ValueKindListValue(value) ->
+            encode.field(
+              6,
+              wire.LengthDelimited,
+              encode.length_delimited(encode_list_value(value)),
+            )
         }
       }
       option.None -> <<>>
@@ -68,29 +80,65 @@ pub fn encode_value(message: Value) -> BitArray {
 }
 
 pub fn encode_struct(message: Struct) -> BitArray {
-  let fields_fields = list.map(message.fields, fn(pair) { let #(key, value) = pair
-    encode.field(1, wire.LengthDelimited, encode.length_delimited(encode.message([encode.string_field(1, key), encode.field(2, wire.LengthDelimited, encode.length_delimited(encode_value(value)))]))) })
+  let fields_fields =
+    list.map(message.fields, fn(pair) {
+      let #(key, value) = pair
+      encode.field(
+        1,
+        wire.LengthDelimited,
+        encode.length_delimited(
+          encode.message([
+            encode.string_field(1, key),
+            encode.field(
+              2,
+              wire.LengthDelimited,
+              encode.length_delimited(encode_value(value)),
+            ),
+          ]),
+        ),
+      )
+    })
   encode.message(fields_fields)
 }
 
 pub fn list_value_decoder() -> decode.Decoder(ListValue) {
   use _ <- decode.then(decode.success(Nil))
-  use values <- decode.then(decode.repeated_field(1, fn(field) { decode.message_field(_, value_decoder())(field) }))
+  use values <- decode.then(
+    decode.repeated_field(1, fn(field) {
+      decode.message_field(_, value_decoder())(field)
+    }),
+  )
   decode.success(ListValue(values: values))
 }
 
-pub fn decode_list_value(data: BitArray) -> Result(ListValue, List(decode.DecodeError)) {
+pub fn decode_list_value(
+  data: BitArray,
+) -> Result(ListValue, List(decode.DecodeError)) {
   decode.run(data, list_value_decoder())
 }
 
 fn oneof_value_kind_decoder() -> decode.Decoder(option.Option(ValueKind)) {
   decode.oneof([
-    #(1, wire.Varint, False, fn(field) { decode_null_value_from_field(field) |> result.map(ValueKindNullValue) }),
-    #(2, wire.Fixed64, False, fn(field) { decode.double_field(field) |> result.map(ValueKindNumberValue) }),
-    #(3, wire.LengthDelimited, False, fn(field) { decode.string_field(field) |> result.map(ValueKindStringValue) }),
-    #(4, wire.Varint, False, fn(field) { decode.bool_field(field) |> result.map(ValueKindBoolValue) }),
-    #(5, wire.LengthDelimited, True, fn(field) { decode.message_field(_, struct_decoder())(field) |> result.map(ValueKindStructValue) }),
-    #(6, wire.LengthDelimited, True, fn(field) { decode.message_field(_, list_value_decoder())(field) |> result.map(ValueKindListValue) }),
+    #(1, wire.Varint, False, fn(field) {
+      decode_null_value_from_field(field) |> result.map(ValueKindNullValue)
+    }),
+    #(2, wire.Fixed64, False, fn(field) {
+      decode.double_field(field) |> result.map(ValueKindNumberValue)
+    }),
+    #(3, wire.LengthDelimited, False, fn(field) {
+      decode.string_field(field) |> result.map(ValueKindStringValue)
+    }),
+    #(4, wire.Varint, False, fn(field) {
+      decode.bool_field(field) |> result.map(ValueKindBoolValue)
+    }),
+    #(5, wire.LengthDelimited, True, fn(field) {
+      decode.message_field(_, struct_decoder())(field)
+      |> result.map(ValueKindStructValue)
+    }),
+    #(6, wire.LengthDelimited, True, fn(field) {
+      decode.message_field(_, list_value_decoder())(field)
+      |> result.map(ValueKindListValue)
+    }),
   ])
 }
 
@@ -104,7 +152,8 @@ pub fn decode_value(data: BitArray) -> Result(Value, List(decode.DecodeError)) {
   decode.run(data, value_decoder())
 }
 
-fn struct_map_entry_1_decoder() -> fn(decode.Field) -> Result(#(String, Value), decode.DecodeError) {
+fn struct_map_entry_1_decoder() -> fn(decode.Field) ->
+  Result(#(String, Value), decode.DecodeError) {
   fn(field) {
     let entry_decoder = {
       use key <- decode.then(decode.string_with_default(1, ""))
@@ -120,46 +169,73 @@ fn struct_map_entry_1_decoder() -> fn(decode.Field) -> Result(#(String, Value), 
 
 pub fn struct_decoder() -> decode.Decoder(Struct) {
   use _ <- decode.then(decode.success(Nil))
-  use fields <- decode.then(decode.map(decode.repeated_field(1, fn(field) { struct_map_entry_1_decoder()(field) }), decode.map_entries))
+  use fields <- decode.then(decode.map(
+    decode.repeated_field(1, fn(field) { struct_map_entry_1_decoder()(field) }),
+    decode.map_entries,
+  ))
   decode.success(Struct(fields: fields))
 }
 
-pub fn decode_struct(data: BitArray) -> Result(Struct, List(decode.DecodeError)) {
+pub fn decode_struct(
+  data: BitArray,
+) -> Result(Struct, List(decode.DecodeError)) {
   decode.run(data, struct_decoder())
 }
 
 pub fn encode_null_value_value(value: NullValue) -> Int {
   case value {
-    NULLVALUE -> 0
+    NullValue -> 0
   }
 }
 
 pub fn decode_null_value_field(field_num: Int) -> decode.Decoder(NullValue) {
-  decode.field_with_default(field_num, fn(field) {
-    use value <- result.try(decode.int32_field(field))
-    case value {
-          0 -> Ok(NULLVALUE)
-      _ -> Error(decode.DecodeError(expected: "valid null_value value", found: "Unknown null_value value: " <> string.inspect(value), path: []))
-    }
-  }, NULLVALUE)
+  decode.field_with_default(
+    field_num,
+    fn(field) {
+      use value <- result.try(decode.int32_field(field))
+      case value {
+        0 -> Ok(NullValue)
+        _ ->
+          Error(
+            decode.DecodeError(
+              expected: "valid null_value value",
+              found: "Unknown null_value value: " <> string.inspect(value),
+              path: [],
+            ),
+          )
+      }
+    },
+    NullValue,
+  )
 }
 
-pub fn decode_null_value_from_field(field: decode.Field) -> Result(NullValue, decode.DecodeError) {
+pub fn decode_null_value_from_field(
+  field: decode.Field,
+) -> Result(NullValue, decode.DecodeError) {
   use value <- result.try(decode.int32_field(field))
   case value {
-      0 -> Ok(NULLVALUE)
-    _ -> Error(decode.DecodeError(expected: "valid null_value value", found: "Unknown null_value value: " <> string.inspect(value), path: []))
+    0 -> Ok(NullValue)
+    _ ->
+      Error(
+        decode.DecodeError(
+          expected: "valid null_value value",
+          found: "Unknown null_value value: " <> string.inspect(value),
+          path: [],
+        ),
+      )
   }
 }
 
 pub fn decode_null_value_value(value: Int) -> Result(NullValue, String) {
   case value {
-    0 -> Ok(NULLVALUE)
+    0 -> Ok(NullValue)
     _ -> Error("Unknown null_value value: " <> int.to_string(value))
   }
 }
 
-pub fn decode_repeated_null_value(field_num: Int) -> decode.Decoder(List(NullValue)) {
+pub fn decode_repeated_null_value(
+  field_num: Int,
+) -> decode.Decoder(List(NullValue)) {
   use values <- decode.then(decode.repeated_int32(field_num))
   case list.try_map(values, decode_null_value_value) {
     Ok(values) -> decode.success(values)

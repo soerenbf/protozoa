@@ -9,15 +9,15 @@ import protozoa/decode
 import protozoa/encode
 
 pub type ValuesFields {
-  ValuesFields(
-    values: List(String),
-    label: String,
-  )
+  ValuesFields(values: List(String), label: String)
 }
 
 pub fn encode_values_fields(message: ValuesFields) -> BitArray {
-  let values_fields = list.map(message.values, fn(v) { encode.string_field(1, v) })
-  encode.message(list.flatten([values_fields, [encode.string_field(2, message.label)]]))
+  let values_fields =
+    list.map(message.values, fn(v) { encode.string_field(1, v) })
+  encode.message(
+    list.flatten([values_fields, [encode.string_field(2, message.label)]]),
+  )
 }
 
 pub fn values_fields_decoder() -> decode.Decoder(ValuesFields) {
@@ -27,6 +27,8 @@ pub fn values_fields_decoder() -> decode.Decoder(ValuesFields) {
   decode.success(ValuesFields(values: values, label: label))
 }
 
-pub fn decode_values_fields(data: BitArray) -> Result(ValuesFields, List(decode.DecodeError)) {
+pub fn decode_values_fields(
+  data: BitArray,
+) -> Result(ValuesFields, List(decode.DecodeError)) {
   decode.run(data, values_fields_decoder())
 }

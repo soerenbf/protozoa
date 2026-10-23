@@ -32,7 +32,7 @@ pub fn normalized_collisions_return_diagnostics_test() {
     "Generated name collision",
   )
   rejects(
-    "enum A { ZERO = 0; } message ZERO {} message AZERO {}",
+    "enum A { ZERO = 0; } message Zero {} message AZero {}",
     "Generated name collision",
   )
   rejects("enum A { foo_bar = 0; FooBar = 1; }", "Generated name collision")
@@ -55,14 +55,14 @@ pub fn enum_constructor_collision_policy_test() {
     generates(
       "enum Unique { ONLY = 0; } enum A { ZERO = 0; } enum B { ZERO = 0; }",
     )
-  let assert True = string.contains(output, "pub type Unique {\n  ONLY\n}")
-  let assert True = string.contains(output, "  ONLY -> 0")
-  let assert True = string.contains(output, "0 -> Ok(ONLY)")
-  let assert True = string.contains(output, "}, ONLY)")
-  let assert True = string.contains(output, "pub type A {\n  AZERO\n}")
-  let assert True = string.contains(output, "pub type B {\n  BZERO\n}")
-  let assert True = string.contains(output, "  AZERO -> 0")
-  let assert True = string.contains(output, "0 -> Ok(BZERO)")
+  let assert True = string.contains(output, "pub type Unique {\n  Only\n}")
+  let assert True = string.contains(output, "  Only -> 0")
+  let assert True = string.contains(output, "0 -> Ok(Only)")
+  let assert True = string.contains(output, "}, Only)")
+  let assert True = string.contains(output, "pub type A {\n  AZero\n}")
+  let assert True = string.contains(output, "pub type B {\n  BZero\n}")
+  let assert True = string.contains(output, "  AZero -> 0")
+  let assert True = string.contains(output, "0 -> Ok(BZero)")
 }
 
 /// Distinct proto spellings that normalize identically qualify both owners.
@@ -85,6 +85,18 @@ pub fn enum_constructor_message_oneof_and_cascade_collisions_test() {
   let assert True = string.contains(output, "pub type B {\n  BAClash\n}")
   let assert True = string.contains(output, "  AMChoiceItem -> 1")
   let assert True = string.contains(output, "0 -> Ok(BAClash)")
+}
+
+/// Uppercase snake variants retain their full prefix; mixed-case names stay intact.
+pub fn uppercase_snake_enum_test() {
+  let output =
+    generates(
+      "enum OpenStatus { OPEN_STATUS_OPEN_FOR_ALL = 0; alreadyMixed = 1; HTTPReady = 2; }",
+    )
+  let assert True = string.contains(output, "  OpenStatusOpenForAll")
+  let assert True = string.contains(output, "  AlreadyMixed")
+  let assert True = string.contains(output, "  HTTPReady")
+  rejects("enum A { FOO_BAR = 0; FooBar = 1; }", "Generated name collision")
 }
 
 fn generates(source: String) -> String {

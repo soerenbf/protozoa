@@ -8,9 +8,7 @@ import protozoa/decode
 import protozoa/encode
 
 pub type Token {
-  Token(
-    text: String,
-  )
+  Token(text: String)
 }
 
 pub fn encode_token(message: Token) -> BitArray {

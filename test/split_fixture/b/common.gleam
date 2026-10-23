@@ -8,9 +8,7 @@ import protozoa/decode
 import protozoa/encode
 
 pub type Item {
-  Item(
-    number: Int,
-  )
+  Item(number: Int)
 }
 
 pub fn encode_item(message: Item) -> BitArray {

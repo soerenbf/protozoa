@@ -145,14 +145,28 @@ pub fn constructor(owner: String, variant: String) -> String {
 /// Render an enum variant using the module-wide collision policy.
 /// `owner` is the rendered type, `variant` the proto name, and `ctx` the registry
 /// context. Never fails. Example: a unique `enum_constructor("State", "ZERO", ctx)`
-/// returns `"ZERO"`; a colliding one returns `"StateZERO"`.
+/// returns `"Zero"`; a colliding one returns `"StateZero"`.
 pub fn enum_constructor(
   owner: String,
   variant: String,
   ctx: Context,
 ) -> String {
   dict.get(ctx.enum_names, #(owner, variant))
-  |> result.unwrap(capitalize_first(variant))
+  |> result.unwrap(enum_variant(variant))
+}
+
+/// Render uppercase snake enum `name` as PascalCase without stripping prefixes.
+/// Mixed-case names retain their spelling. Never fails.
+/// Example: `enum_variant("OPEN_STATUS_OPEN_FOR_ALL") == "OpenStatusOpenForAll"`.
+pub fn enum_variant(name: String) -> String {
+  case name == string.uppercase(name) {
+    True ->
+      name
+      |> string.split("_")
+      |> list.map(fn(part) { part |> string.lowercase |> capitalize_first })
+      |> string.join("")
+    False -> capitalize_first(name)
+  }
 }
 
 fn enum_names(registry: TypeRegistry) -> dict.Dict(#(String, String), String) {
@@ -190,8 +204,8 @@ fn qualify_collisions(
   let names =
     list.map(variants, fn(key) {
       #(key, case set.contains(qualified, key) {
-        True -> constructor(key.0, key.1)
-        False -> capitalize_first(key.1)
+        True -> key.0 <> enum_variant(key.1)
+        False -> enum_variant(key.1)
       })
     })
   let all_names = list.append(reserved, list.map(names, fn(entry) { entry.1 }))

@@ -85,13 +85,6 @@ order. Generic repeated-field behavior and all encoding/wire sources are unchang
 Generated repeated-enum helpers now require this repaired fork runtime, not Hex
 2.0.3. No claim is made for all packed numeric types or full protobuf conformance.
 
-The parent SDK wire checker also independently verifies each target's exported
-packed/unpacked/mixed re-encoding with protoc. Run from the parent repository root:
-
-```sh
-.venv-codegen/bin/python tools/check_wire_fixtures.py
-```
-
 `gleam run -m wire_export --target erlang` (or `--target javascript`) prints
-hexadecimal encoded values for that checker. It asserts on decode failure and
-never connects to a node.
+hexadecimal encoded values for independent checking. It asserts on decode failure
+and never connects to a node.

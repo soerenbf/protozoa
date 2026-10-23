@@ -12,20 +12,16 @@ import protozoa/decode
 import protozoa/encode
 
 pub type Value {
-  Value(
-    text: String,
-  )
+  Value(text: String)
 }
 
 pub type EnvelopeItem {
-  EnvelopeItem(
-    text: String,
-  )
+  EnvelopeItem(text: String)
 }
 
 pub type EnvelopeState {
-  ZERO
-  READY
+  Zero
+  Ready
 }
 
 pub type Envelope {
@@ -53,7 +49,9 @@ pub fn envelope_decoder() -> decode.Decoder(Envelope) {
   decode.success(Envelope)
 }
 
-pub fn decode_envelope(data: BitArray) -> Result(Envelope, List(decode.DecodeError)) {
+pub fn decode_envelope(
+  data: BitArray,
+) -> Result(Envelope, List(decode.DecodeError)) {
   decode.run(data, envelope_decoder())
 }
 
@@ -63,7 +61,9 @@ pub fn envelope_item_decoder() -> decode.Decoder(EnvelopeItem) {
   decode.success(EnvelopeItem(text: text))
 }
 
-pub fn decode_envelope_item(data: BitArray) -> Result(EnvelopeItem, List(decode.DecodeError)) {
+pub fn decode_envelope_item(
+  data: BitArray,
+) -> Result(EnvelopeItem, List(decode.DecodeError)) {
   decode.run(data, envelope_item_decoder())
 }
 
@@ -79,40 +79,66 @@ pub fn decode_value(data: BitArray) -> Result(Value, List(decode.DecodeError)) {
 
 pub fn encode_envelope_state_value(value: EnvelopeState) -> Int {
   case value {
-    ZERO -> 0
-    READY -> 1
+    Zero -> 0
+    Ready -> 1
   }
 }
 
-pub fn decode_envelope_state_field(field_num: Int) -> decode.Decoder(EnvelopeState) {
-  decode.field_with_default(field_num, fn(field) {
-    use value <- result.try(decode.int32_field(field))
-    case value {
-          0 -> Ok(ZERO)
-          1 -> Ok(READY)
-      _ -> Error(decode.DecodeError(expected: "valid envelope_state value", found: "Unknown envelope_state value: " <> string.inspect(value), path: []))
-    }
-  }, ZERO)
+pub fn decode_envelope_state_field(
+  field_num: Int,
+) -> decode.Decoder(EnvelopeState) {
+  decode.field_with_default(
+    field_num,
+    fn(field) {
+      use value <- result.try(decode.int32_field(field))
+      case value {
+        0 -> Ok(Zero)
+        1 -> Ok(Ready)
+        _ ->
+          Error(
+            decode.DecodeError(
+              expected: "valid envelope_state value",
+              found: "Unknown envelope_state value: " <> string.inspect(value),
+              path: [],
+            ),
+          )
+      }
+    },
+    Zero,
+  )
 }
 
-pub fn decode_envelope_state_from_field(field: decode.Field) -> Result(EnvelopeState, decode.DecodeError) {
+pub fn decode_envelope_state_from_field(
+  field: decode.Field,
+) -> Result(EnvelopeState, decode.DecodeError) {
   use value <- result.try(decode.int32_field(field))
   case value {
-      0 -> Ok(ZERO)
-      1 -> Ok(READY)
-    _ -> Error(decode.DecodeError(expected: "valid envelope_state value", found: "Unknown envelope_state value: " <> string.inspect(value), path: []))
+    0 -> Ok(Zero)
+    1 -> Ok(Ready)
+    _ ->
+      Error(
+        decode.DecodeError(
+          expected: "valid envelope_state value",
+          found: "Unknown envelope_state value: " <> string.inspect(value),
+          path: [],
+        ),
+      )
   }
 }
 
-pub fn decode_envelope_state_value(value: Int) -> Result(EnvelopeState, String) {
+pub fn decode_envelope_state_value(
+  value: Int,
+) -> Result(EnvelopeState, String) {
   case value {
-    0 -> Ok(ZERO)
-    1 -> Ok(READY)
+    0 -> Ok(Zero)
+    1 -> Ok(Ready)
     _ -> Error("Unknown envelope_state value: " <> int.to_string(value))
   }
 }
 
-pub fn decode_repeated_envelope_state(field_num: Int) -> decode.Decoder(List(EnvelopeState)) {
+pub fn decode_repeated_envelope_state(
+  field_num: Int,
+) -> decode.Decoder(List(EnvelopeState)) {
   use values <- decode.then(decode.repeated_int32(field_num))
   case list.try_map(values, decode_envelope_state_value) {
     Ok(values) -> decode.success(values)

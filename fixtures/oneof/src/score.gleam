@@ -37,9 +37,9 @@ pub type Score {
   Score(choice: option.Option(ScoreChoice))
 }
 
-pub fn encode_score(score: Score) -> BitArray {
+pub fn encode_score(message: Score) -> BitArray {
   encode.message([
-    case score.choice {
+    case message.choice {
       option.Some(oneof_value) -> {
         case oneof_value {
           ScoreChoicePick01(value) -> encode.int32_field(1, value)
