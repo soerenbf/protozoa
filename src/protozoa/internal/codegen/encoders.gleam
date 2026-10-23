@@ -7,10 +7,7 @@ import gleam/int
 import gleam/list
 import gleam/set
 import gleam/string
-import justin
-import protozoa/internal/codegen/types.{
-  type Context, capitalize_first, flatten_type_name,
-}
+import protozoa/internal/codegen/types.{type Context, capitalize_first}
 import protozoa/internal/type_registry
 import protozoa/parser/proto.{type Field, type Message, type Type}
 
@@ -93,11 +90,17 @@ pub fn generate_encoder(message: Message, ctx: Context) -> String {
 
   // Generate different types of encoders
   let regular_encoders =
-    generate_regular_field_encoders(regular_fields, param_name)
+    generate_regular_field_encoders(regular_fields, param_name, ctx)
   let oneof_encoders =
-    generate_oneof_encoders(message.oneofs, qualified_type_name, param_name)
-  let repeated_code = generate_repeated_fields_code(repeated_fields, param_name)
-  let map_code = generate_map_fields_code(map_fields, param_name)
+    generate_oneof_encoders(
+      message.oneofs,
+      qualified_type_name,
+      param_name,
+      ctx,
+    )
+  let repeated_code =
+    generate_repeated_fields_code(repeated_fields, param_name, ctx)
+  let map_code = generate_map_fields_code(map_fields, param_name, ctx)
 
   // Build the function body
   let body =
@@ -148,14 +151,15 @@ fn collect_enum_names_in_oneofs(
       list.fold(msg.fields, acc, fn(field_acc, field) {
         case field.field_type {
           proto.Optional(proto.EnumType(name)) ->
-            set.insert(field_acc, flatten_type_name(name))
+            set.insert(field_acc, types.resolve_type(proto.EnumType(name), ctx))
           _ -> field_acc
         }
       })
     list.fold(msg.oneofs, acc, fn(inner_acc, oneof) {
       list.fold(oneof.fields, inner_acc, fn(field_acc, field) {
         case field.field_type {
-          proto.EnumType(name) -> set.insert(field_acc, flatten_type_name(name))
+          proto.EnumType(name) ->
+            set.insert(field_acc, types.resolve_type(proto.EnumType(name), ctx))
           _ -> field_acc
         }
       })
@@ -168,43 +172,52 @@ fn collect_enum_names_in_oneofs(
 fn generate_regular_field_encoders(
   fields: List(Field),
   param_name: String,
+  ctx: Context,
 ) -> List(String) {
   // Field types are already resolved by resolve_message_types in generate_encoders
   fields
-  |> list.map(fn(field) { generate_field_encoder(field, param_name) })
+  |> list.map(fn(field) { generate_field_encoder(field, param_name, ctx) })
 }
 
 fn generate_oneof_encoders(
   oneofs: List(proto.Oneof),
   message_name: String,
   param_name: String,
+  ctx: Context,
 ) -> List(String) {
   oneofs
   |> list.map(fn(oneof) {
-    generate_oneof_encoder(message_name, oneof, param_name)
+    generate_oneof_encoder(message_name, oneof, param_name, ctx)
   })
 }
 
 fn generate_repeated_fields_code(
   fields: List(Field),
   param_name: String,
+  ctx: Context,
 ) -> String {
   case fields {
     [] -> ""
     _ -> {
       fields
-      |> list.map(fn(field) { generate_repeated_field_code(field, param_name) })
+      |> list.map(fn(field) {
+        generate_repeated_field_code(field, param_name, ctx)
+      })
       |> string.join("\n  ")
     }
   }
 }
 
-fn generate_map_fields_code(fields: List(Field), param_name: String) -> String {
+fn generate_map_fields_code(
+  fields: List(Field),
+  param_name: String,
+  ctx: Context,
+) -> String {
   case fields {
     [] -> ""
     _ -> {
       fields
-      |> list.map(fn(field) { generate_map_field_code(field, param_name) })
+      |> list.map(fn(field) { generate_map_field_code(field, param_name, ctx) })
       |> string.join("\n  ")
     }
   }
@@ -266,23 +279,33 @@ fn build_list_flattening(vars: List(String)) -> String {
   }
 }
 
-fn generate_field_encoder(field: Field, param_name: String) -> String {
+fn generate_field_encoder(
+  field: Field,
+  param_name: String,
+  ctx: Context,
+) -> String {
   let escaped_field_name = types.field_name(field.name)
   let field_access = param_name <> "." <> escaped_field_name
   let field_num = int.to_string(field.number)
 
   case field.field_type {
     proto.Optional(inner) ->
-      generate_optional_field_encoder_typed(inner, field_access, field_num)
+      generate_optional_field_encoder_typed(inner, field_access, field_num, ctx)
     proto.MessageType(_) ->
       generate_optional_field_encoder_typed(
         field.field_type,
         field_access,
         field_num,
+        ctx,
       )
     proto.Repeated(_) -> "// Repeated fields handled separately"
     _ ->
-      generate_required_field_encoder(field.field_type, field_access, field_num)
+      generate_required_field_encoder(
+        field.field_type,
+        field_access,
+        field_num,
+        ctx,
+      )
   }
 }
 
@@ -290,6 +313,7 @@ fn generate_required_field_encoder(
   proto_type: Type,
   access: String,
   field_num: String,
+  ctx: Context,
 ) -> String {
   case proto_type {
     proto.String -> "encode.string_field(" <> field_num <> ", " <> access <> ")"
@@ -319,17 +343,17 @@ fn generate_required_field_encoder(
     proto.MessageType(_) ->
       "encode.field("
       <> field_num
-      <> ", wire.LengthDelimited, encode.length_delimited(encode_"
-      <> justin.snake_case(flatten_type_name(get_type_name(proto_type)))
+      <> ", wire.LengthDelimited, encode.length_delimited("
+      <> types.codec(get_type_name(proto_type), "encode_", "", ctx)
       <> "("
       <> access
       <> ")))"
     proto.EnumType(_) ->
       "encode.int32_field("
       <> field_num
-      <> ", encode_"
-      <> justin.snake_case(flatten_type_name(get_type_name(proto_type)))
-      <> "_value("
+      <> ", "
+      <> types.codec(get_type_name(proto_type), "encode_", "_value", ctx)
+      <> "("
       <> access
       <> "))"
     _ -> "// Unsupported type: " <> string.inspect(proto_type)
@@ -340,11 +364,12 @@ fn generate_optional_field_encoder_typed(
   inner_type: Type,
   access: String,
   field_num: String,
+  ctx: Context,
 ) -> String {
   "case "
   <> access
   <> " {\n      option.Some(value) -> "
-  <> generate_required_field_encoder(inner_type, "value", field_num)
+  <> generate_required_field_encoder(inner_type, "value", field_num, ctx)
   <> "\n      option.None -> <<>>\n    }"
 }
 
@@ -352,6 +377,7 @@ fn generate_oneof_encoder(
   message_name: String,
   oneof: proto.Oneof,
   param_name: String,
+  ctx: Context,
 ) -> String {
   let escaped_oneof_name = types.field_name(oneof.name)
   let oneof_access = param_name <> "." <> escaped_oneof_name
@@ -363,7 +389,12 @@ fn generate_oneof_encoder(
       let field_num = int.to_string(field.number)
       let variant_name = types.constructor(type_name, field.name)
       let encoder =
-        generate_required_field_encoder(field.field_type, "value", field_num)
+        generate_required_field_encoder(
+          field.field_type,
+          "value",
+          field_num,
+          ctx,
+        )
       "      " <> variant_name <> "(value) -> " <> encoder
     })
     |> string.join("\n")
@@ -375,7 +406,11 @@ fn generate_oneof_encoder(
   <> "\n        }\n      }\n      option.None -> <<>>\n    }"
 }
 
-fn generate_repeated_field_code(field: Field, param_name: String) -> String {
+fn generate_repeated_field_code(
+  field: Field,
+  param_name: String,
+  ctx: Context,
+) -> String {
   let escaped_field_name = types.field_name(field.name)
   let field_name = escaped_field_name
   let var_name = field_name <> "_fields"
@@ -384,7 +419,7 @@ fn generate_repeated_field_code(field: Field, param_name: String) -> String {
 
   case field.field_type {
     proto.Repeated(inner_type) -> {
-      let encoder = generate_repeated_item_encoder(inner_type, field_num)
+      let encoder = generate_repeated_item_encoder(inner_type, field_num, ctx)
       "let "
       <> var_name
       <> " = list.map("
@@ -400,6 +435,7 @@ fn generate_repeated_field_code(field: Field, param_name: String) -> String {
 fn generate_repeated_item_encoder(
   proto_type: Type,
   field_num: String,
+  ctx: Context,
 ) -> String {
   case proto_type {
     proto.String -> "encode.string_field(" <> field_num <> ", v)"
@@ -412,20 +448,24 @@ fn generate_repeated_item_encoder(
     proto.MessageType(_) ->
       "encode.field("
       <> field_num
-      <> ", wire.LengthDelimited, encode.length_delimited(encode_"
-      <> justin.snake_case(flatten_type_name(get_type_name(proto_type)))
+      <> ", wire.LengthDelimited, encode.length_delimited("
+      <> types.codec(get_type_name(proto_type), "encode_", "", ctx)
       <> "(v)))"
     proto.EnumType(_) ->
       "encode.int32_field("
       <> field_num
-      <> ", encode_"
-      <> justin.snake_case(flatten_type_name(get_type_name(proto_type)))
-      <> "_value(v))"
+      <> ", "
+      <> types.codec(get_type_name(proto_type), "encode_", "_value", ctx)
+      <> "(v))"
     _ -> "encode.string_field(" <> field_num <> ", \"unsupported\")"
   }
 }
 
-fn generate_map_field_code(field: Field, param_name: String) -> String {
+fn generate_map_field_code(
+  field: Field,
+  param_name: String,
+  ctx: Context,
+) -> String {
   let escaped_field_name = types.field_name(field.name)
   let field_name = escaped_field_name
   let var_name = field_name <> "_fields"
@@ -435,7 +475,7 @@ fn generate_map_field_code(field: Field, param_name: String) -> String {
   case field.field_type {
     proto.Map(key_type, value_type) -> {
       let key_encoder = generate_map_key_encoder(key_type)
-      let value_encoder = generate_map_value_encoder(value_type)
+      let value_encoder = generate_map_value_encoder(value_type, ctx)
       "let "
       <> var_name
       <> " = list.map("
@@ -470,7 +510,7 @@ fn generate_map_key_encoder(proto_type: Type) -> String {
   }
 }
 
-fn generate_map_value_encoder(proto_type: Type) -> String {
+fn generate_map_value_encoder(proto_type: Type, ctx: Context) -> String {
   case proto_type {
     proto.String -> "encode.string_field(2, value)"
     proto.Int32 -> "encode.int32_field(2, value)"
@@ -489,13 +529,13 @@ fn generate_map_value_encoder(proto_type: Type) -> String {
     proto.Float -> "encode.float_field(2, value)"
     proto.Double -> "encode.double_field(2, value)"
     proto.MessageType(name) ->
-      "encode.field(2, wire.LengthDelimited, encode.length_delimited(encode_"
-      <> justin.snake_case(flatten_type_name(name))
+      "encode.field(2, wire.LengthDelimited, encode.length_delimited("
+      <> types.codec(name, "encode_", "", ctx)
       <> "(value)))"
     proto.EnumType(name) ->
-      "encode.int32_field(2, encode_"
-      <> justin.snake_case(flatten_type_name(name))
-      <> "_value(value))"
+      "encode.int32_field(2, "
+      <> types.codec(name, "encode_", "_value", ctx)
+      <> "(value))"
     _ -> "encode.string_field(2, value)"
   }
 }
@@ -610,7 +650,7 @@ fn generate_enum_decoder(
     <> "}"
 
   // Optional fields and oneofs both decode an enum from a runtime field.
-  case set.contains(enums_in_oneofs, qualified_type_name) {
+  case ctx.local_names || set.contains(enums_in_oneofs, qualified_type_name) {
     True ->
       main_decoder
       <> "\n\n"
@@ -644,7 +684,12 @@ fn generate_enum_field_decoder(
     })
     |> string.join("\n")
 
-  "fn "
+  {
+    case ctx.local_names {
+      True -> "pub fn "
+      False -> "fn "
+    }
+  }
   <> function_name
   <> "(field: decode.Field) -> Result("
   <> qualified_type_name

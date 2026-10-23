@@ -21,6 +21,8 @@ pub type Context {
     registry: TypeRegistry,
     file_path: String,
     package: String,
+    local_names: Bool,
+    references: dict.Dict(String, #(String, String, String)),
     enum_names: dict.Dict(#(String, String), String),
   )
 }
@@ -37,8 +39,58 @@ pub fn new_ctx(registry: TypeRegistry, file_path: String) -> Context {
     registry: registry,
     file_path: file_path,
     package: package,
+    local_names: False,
+    references: dict.new(),
     enum_names: enum_names(registry),
   )
+}
+
+/// Build a package-free naming context for `file_path` in `registry`.
+/// Resolution retains the original registry/package. Enum collisions are scoped
+/// to this file only. Never fails; unknown files have no enum policy.
+/// Example: `new_local_ctx(registry, "items.proto")`.
+pub fn new_local_ctx(registry: TypeRegistry, file_path: String) -> Context {
+  let ctx = new_ctx(registry, file_path)
+  let local_messages =
+    registry.messages
+    |> dict.to_list
+    |> list.filter_map(fn(entry) {
+      case dict.get(registry.type_sources, entry.0) {
+        Ok(path) if path == file_path ->
+          Ok(#(local_name(entry.0, ctx.package), entry.1))
+        _ -> Error(Nil)
+      }
+    })
+    |> dict.from_list
+  let local_enums =
+    registry.enums
+    |> dict.to_list
+    |> list.filter_map(fn(entry) {
+      case dict.get(registry.type_sources, entry.0) {
+        Ok(path) if path == file_path ->
+          Ok(#(local_name(entry.0, ctx.package), entry.1))
+        _ -> Error(Nil)
+      }
+    })
+    |> dict.from_list
+  Context(
+    ..ctx,
+    local_names: True,
+    enum_names: enum_names(
+      type_registry.TypeRegistry(
+        ..registry,
+        messages: local_messages,
+        enums: local_enums,
+      ),
+    ),
+  )
+}
+
+fn local_name(name: String, package: String) -> String {
+  case package {
+    "" -> name
+    _ -> string.drop_start(name, string.length(package) + 1)
+  }
 }
 
 // Reserved Gleam keywords that need to be escaped when used as field names
@@ -269,18 +321,22 @@ fn generate_message_type(message: Message, ctx: Context) -> String {
   }
 }
 
-/// Get the fully qualified and flattened type name for a message
+/// Render declaration `name` with containing-message prefixes. A local `ctx`
+/// omits the package; a legacy context retains it. Never fails.
+/// Example: `qualified_type("Envelope.Item", local_ctx)` is `"EnvelopeItem"`.
 pub fn qualified_type(name: String, ctx: Context) -> String {
   // Build fully qualified name and flatten it
-  let fqn = case ctx.package {
-    "" -> name
-    pkg -> pkg <> "." <> name
+  let fqn = case ctx.local_names, ctx.package {
+    True, _ -> name
+    _, "" -> name
+    _, pkg -> pkg <> "." <> name
   }
   flatten_type_name(fqn)
 }
 
-/// Get the qualified snake_case function name suffix for a message
-/// e.g., "base" package + "BaseMessage" -> "base_base_message"
+/// Render the codec suffix for declaration `name` using `ctx`'s naming mode.
+/// Local contexts omit packages but retain containing-message names. Never fails.
+/// Example: `qualified_fn("Envelope.Item", local_ctx)` is `"envelope_item"`.
 pub fn qualified_fn(name: String, ctx: Context) -> String {
   // Get the qualified type name first
   let type_name = qualified_type(name, ctx)
@@ -402,13 +458,25 @@ pub fn resolve_type(proto_type: Type, ctx: Context) -> String {
 }
 
 fn resolve_external_type(name: String, ctx: Context) -> String {
-  // Try to resolve the type through the registry
-  case type_registry.resolve_type_reference(ctx.registry, name, ctx.package) {
-    Ok(resolved_fqn) -> {
-      // All types are merged into a single Gleam module, so just flatten the name
-      flatten_type_name(resolved_fqn)
+  // Field references have already been resolved in their original lexical scope.
+  case dict.get(ctx.references, name) {
+    Ok(#(local, _, qualifier)) -> qualifier <> local
+    Error(_) -> {
+      case dict.has_key(ctx.registry.type_sources, name) {
+        True -> flatten_type_name(name)
+        False ->
+          case
+            type_registry.resolve_type_reference(
+              ctx.registry,
+              name,
+              ctx.package,
+            )
+          {
+            Ok(identity) -> flatten_type_name(identity)
+            Error(error) -> panic as error
+          }
+      }
     }
-    Error(error) -> panic as error
   }
 }
 
@@ -470,4 +538,36 @@ pub fn capitalize_first(str: String) -> String {
     }
   })
   |> string.join("")
+}
+
+/// Render a codec reference to resolved protobuf `identity` in `ctx`, with the
+/// supplied function `prefix` and `suffix`. Legacy contexts keep flattened names.
+/// Never fails for validated schemas. Example: `codec("pkg.Item", "encode_", "", ctx)`.
+pub fn codec(
+  identity: String,
+  prefix: String,
+  suffix: String,
+  ctx: Context,
+) -> String {
+  case dict.get(ctx.references, identity) {
+    Ok(#(_, name, qualifier)) -> qualifier <> prefix <> name <> suffix
+    Error(_) ->
+      prefix <> justin.snake_case(flatten_type_name(identity)) <> suffix
+  }
+}
+
+/// Name the private oneof decoder for local `owner` and protobuf `field`.
+/// Never fails. Example: `oneof_decoder_name("Foo", "bar")`.
+pub fn oneof_decoder_name(owner: String, field: String) -> String {
+  "oneof_"
+  <> justin.snake_case(owner)
+  <> "_"
+  <> justin.snake_case(field)
+  <> "_decoder"
+}
+
+/// Name a map helper from its message codec `suffix` and decimal field `number`.
+/// Never fails. Example: `map_decoder_name("foo", "1")`.
+pub fn map_decoder_name(suffix: String, number: String) -> String {
+  suffix <> "_map_entry_" <> number <> "_decoder"
 }

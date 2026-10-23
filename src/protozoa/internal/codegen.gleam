@@ -7,13 +7,16 @@
 //// and returns generated code as strings.
 
 import gleam/dict
+import gleam/int
 import gleam/list
 import gleam/option
 import gleam/result
 import gleam/string
 import justin
 import protozoa/internal/codegen/decoders
+import protozoa/internal/codegen/dependencies
 import protozoa/internal/codegen/encoders
+import protozoa/internal/codegen/placement
 import protozoa/internal/codegen/router
 import protozoa/internal/codegen/types
 import protozoa/internal/type_registry.{type TypeRegistry}
@@ -1323,4 +1326,185 @@ fn validate_field_type(
     }
     _ -> Ok(Nil)
   }
+}
+
+/// One generated codec source. `module` is the full slash-separated import path;
+/// `source` is Gleam text. No filesystem writes are performed.
+pub type GeneratedModule {
+  GeneratedModule(module: String, source: String)
+}
+
+/// Render resolved `files` and their original `registry` beneath `prefix`.
+/// Returns sources sorted by module path; service-only files are omitted.
+/// Errors cover invalid placement, unresolved fields and required module cycles.
+/// The combined `generate` API is unchanged. Example:
+/// `generate_modules(files, registry, "generated/proto")`.
+pub fn generate_modules(
+  files: List(Path),
+  registry: TypeRegistry,
+  prefix: String,
+) -> Result(List(GeneratedModule), String) {
+  use declarations <- result.try(placement.plan(
+    registry,
+    list.map(files, fn(f) { f.path }),
+    prefix,
+  ))
+  use _ <- result.try(
+    list.try_each(files, fn(f) {
+      validate_messages(
+        f.content.messages,
+        option.unwrap(f.content.package, ""),
+        registry,
+      )
+    }),
+  )
+  use _ <- result.try(dependencies.check(registry))
+  // An ordinal alias from the sorted complete module set cannot collide with
+  // runtime imports or same-basename owners, even when paths contain underscores.
+  let aliases =
+    declarations
+    |> list.map(fn(d) { d.module })
+    |> list.unique
+    |> list.sort(string.compare)
+    |> list.index_map(fn(module, index) {
+      #(module, "pb_module_" <> int.to_string(index))
+    })
+    |> dict.from_list
+  files
+  |> list.filter(fn(f) { list.any(declarations, fn(d) { d.source == f.path }) })
+  |> list.try_map(fn(f) {
+    let assert Ok(owner) = list.find(declarations, fn(d) { d.source == f.path })
+    let references =
+      declarations
+      |> list.map(fn(d) {
+        let assert Ok(alias) = dict.get(aliases, d.module)
+        let qualifier = case d.source == f.path {
+          True -> ""
+          False -> alias <> "."
+        }
+        #(d.identity, #(d.local_type, d.codec_suffix, qualifier))
+      })
+      |> dict.from_list
+    let local = types.new_local_ctx(registry, f.path)
+    let ctx = types.Context(..local, references: references)
+    let resolved_messages = flatten_for_imports(f.content.messages, "", ctx)
+    let referenced =
+      resolved_messages
+      |> list.flat_map(fn(m) {
+        list.append(m.fields, list.flat_map(m.oneofs, fn(o) { o.fields }))
+        |> list.flat_map(fn(field) { referenced_types(field.field_type) })
+      })
+      |> list.unique
+    use owners <- result.try(
+      list.try_map(referenced, fn(identity) {
+        list.find(declarations, fn(d) { d.identity == identity })
+        |> result.map_error(fn(_) {
+          "Missing declaration placement: "
+          <> identity
+          <> " referenced by "
+          <> f.path
+        })
+      }),
+    )
+    let imports =
+      owners
+      |> list.map(fn(d) { d.module })
+      |> list.filter(fn(module) { module != owner.module })
+      |> list.unique
+      |> list.sort(string.compare)
+      |> list.map(fn(module) {
+        let assert Ok(alias) = dict.get(aliases, module)
+        "import " <> module <> " as " <> alias
+      })
+    let import_file =
+      file.ProtoFile(..f.content, messages: resolved_messages, services: [])
+    let runtime_imports = determine_needed_imports(import_file)
+    let runtime_imports = case
+      list.any(resolved_messages, fn(m) {
+        list.any(m.fields, fn(field) {
+          case field.field_type {
+            proto.Map(_, _) -> True
+            _ -> False
+          }
+        })
+      })
+    {
+      True -> ["import gleam/list", "import protozoa/wire", ..runtime_imports]
+      False -> runtime_imports
+    }
+    let body =
+      [
+        types.generate_enum_types(f.content.enums, ctx),
+        types.generate_types(f.content.messages, ctx),
+        encoders.generate_encoders(f.content.messages, ctx),
+        decoders.generate_decoders(f.content.messages, ctx),
+        encoders.generate_enum_helpers(f.content.enums, f.content.messages, ctx),
+      ]
+      |> list.filter(fn(part) { !string.is_empty(part) })
+      |> string.join("\n\n")
+    // Imported enum helpers live in their owner, not in this module.
+    let runtime_imports =
+      list.filter(runtime_imports, fn(import_line) {
+        let name =
+          string.split(import_line, "/") |> list.last |> result.unwrap("")
+        string.contains(body, name <> ".")
+      })
+    let source =
+      [
+        generate_combined_file_header([f]),
+        string.join(
+          list.append(runtime_imports, imports)
+            |> list.unique
+            |> list.sort(string.compare),
+          "\n",
+        ),
+        body,
+      ]
+      |> list.filter(fn(part) { !string.is_empty(part) })
+      |> string.join("\n\n")
+    Ok(GeneratedModule(owner.module, source))
+  })
+  |> result.map(fn(modules) {
+    list.sort(modules, fn(a, b) { string.compare(a.module, b.module) })
+  })
+}
+
+fn referenced_types(field_type: proto.Type) -> List(String) {
+  case field_type {
+    proto.MessageType(name) | proto.EnumType(name) -> [name]
+    proto.Optional(inner) | proto.Repeated(inner) -> referenced_types(inner)
+    proto.Map(key, value) ->
+      list.append(referenced_types(key), referenced_types(value))
+    _ -> []
+  }
+}
+
+fn flatten_for_imports(
+  messages: List(proto.Message),
+  parent: String,
+  ctx: types.Context,
+) -> List(proto.Message) {
+  list.flat_map(messages, fn(m) {
+    let name = type_registry.make_fully_qualified_name(parent, m.name)
+    let scope = type_registry.make_fully_qualified_name(ctx.package, name)
+    let resolve = fn(field: proto.Field) {
+      proto.Field(
+        ..field,
+        field_type: type_registry.resolve_field_type(
+          ctx.registry,
+          field.field_type,
+          scope,
+        ),
+      )
+    }
+    let resolved =
+      proto.Message(
+        ..m,
+        fields: list.map(m.fields, resolve),
+        oneofs: list.map(m.oneofs, fn(o) {
+          proto.Oneof(..o, fields: list.map(o.fields, resolve))
+        }),
+      )
+    [resolved, ..flatten_for_imports(m.nested_messages, name, ctx)]
+  })
 }
