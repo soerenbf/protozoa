@@ -13,9 +13,9 @@ pub type Item {
   )
 }
 
-pub fn encode_item(item: Item) -> BitArray {
+pub fn encode_item(message: Item) -> BitArray {
   encode.message([
-    encode.int32_field(1, item.number),
+    encode.int32_field(1, message.number),
   ])
 }
 

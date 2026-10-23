@@ -25,15 +25,15 @@ pub type TestserviceResponse {
   )
 }
 
-pub fn encode_testservice_response(testservice_response: TestserviceResponse) -> BitArray {
+pub fn encode_testservice_response(message: TestserviceResponse) -> BitArray {
   encode.message([
-    encode.string_field(1, testservice_response.result),
+    encode.string_field(1, message.result),
   ])
 }
 
-pub fn encode_testservice_request(testservice_request: TestserviceRequest) -> BitArray {
+pub fn encode_testservice_request(message: TestserviceRequest) -> BitArray {
   encode.message([
-    encode.string_field(1, testservice_request.data),
+    encode.string_field(1, message.data),
   ])
 }
 

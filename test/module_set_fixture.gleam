@@ -37,6 +37,14 @@ pub fn files() -> List(file.Path) {
       "shadow.proto",
       "package p; message X { string text = 1; } message p { message X { int32 number = 1; } } message Root { .p.X x = 1; }",
     ),
+    parsed(
+      "repeated.proto",
+      "package p.repeated; message ValuesFields { repeated string values = 1; string label = 2; }",
+    ),
+    parsed(
+      "map.proto",
+      "package p.maps; message ValuesFields { map<string, string> values = 1; string label = 2; }",
+    ),
     parsed("service.proto", "package same; service OnlyService {}"),
   ]
 }
@@ -47,7 +55,7 @@ fn parsed(path, source) {
 }
 
 /// Render the fixture without I/O. No arguments; asserts fixture validity.
-/// Example: `modules()` returns six codec sources.
+/// Example: `modules()` returns eight codec sources.
 pub fn modules() -> List(codegen.GeneratedModule) {
   render(files())
 }
@@ -67,7 +75,7 @@ fn render(files: List(file.Path)) -> List(codegen.GeneratedModule) {
 pub fn deterministic_owners_test() {
   let modules = modules()
   let assert True = modules == render(list.reverse(files()))
-  let assert 6 = list.length(modules)
+  let assert 8 = list.length(modules)
   let assert Ok(root) =
     list.find(modules, fn(m) { m.module == "split_fixture/root" })
   let assert True =

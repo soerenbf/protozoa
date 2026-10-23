@@ -20,10 +20,10 @@ pub type TestSimpleMessage {
   )
 }
 
-pub fn encode_test_simple_message(test_simple_message: TestSimpleMessage) -> BitArray {
+pub fn encode_test_simple_message(message: TestSimpleMessage) -> BitArray {
   encode.message([
-    encode.string_field(1, test_simple_message.name),
-    encode.int32_field(2, test_simple_message.value),
+    encode.string_field(1, message.name),
+    encode.int32_field(2, message.value),
   ])
 }
 

@@ -36,31 +36,31 @@ pub type Root {
   )
 }
 
-pub fn encode_root(root: Root) -> BitArray {
-  let states_fields = list.map(root.states, fn(v) { encode.int32_field(6, pb_module_0.encode_envelope_state_value(v)) })
-  let items_fields = list.map(root.items, fn(v) { encode.field(7, wire.LengthDelimited, encode.length_delimited(pb_module_0.encode_envelope_item(v))) })
-  let items_by_name_fields = list.map(root.items_by_name, fn(pair) { let #(key, value) = pair
+pub fn encode_root(message: Root) -> BitArray {
+  let states_fields = list.map(message.states, fn(v) { encode.int32_field(6, pb_module_0.encode_envelope_state_value(v)) })
+  let items_fields = list.map(message.items, fn(v) { encode.field(7, wire.LengthDelimited, encode.length_delimited(pb_module_0.encode_envelope_item(v))) })
+  let items_by_name_fields = list.map(message.items_by_name, fn(pair) { let #(key, value) = pair
     encode.field(8, wire.LengthDelimited, encode.length_delimited(encode.message([encode.string_field(1, key), encode.field(2, wire.LengthDelimited, encode.length_delimited(pb_module_0.encode_envelope_item(value)))]))) })
-  let states_by_name_fields = list.map(root.states_by_name, fn(pair) { let #(key, value) = pair
+  let states_by_name_fields = list.map(message.states_by_name, fn(pair) { let #(key, value) = pair
     encode.field(9, wire.LengthDelimited, encode.length_delimited(encode.message([encode.string_field(1, key), encode.int32_field(2, pb_module_0.encode_envelope_state_value(value))]))) })
-  let values_fields = list.map(root.values, fn(pair) { let #(key, value) = pair
+  let values_fields = list.map(message.values, fn(pair) { let #(key, value) = pair
     encode.field(13, wire.LengthDelimited, encode.length_delimited(encode.message([encode.string_field(1, key), encode.field(2, wire.LengthDelimited, encode.length_delimited(pb_module_0.encode_value(value)))]))) })
-  encode.message(list.flatten([states_fields, items_fields, items_by_name_fields, states_by_name_fields, values_fields, [case root.item {
+  encode.message(list.flatten([states_fields, items_fields, items_by_name_fields, states_by_name_fields, values_fields, [case message.item {
       option.Some(value) -> encode.field(1, wire.LengthDelimited, encode.length_delimited(pb_module_0.encode_envelope_item(value)))
       option.None -> <<>>
-    }], [case root.other {
+    }], [case message.other {
       option.Some(value) -> encode.field(2, wire.LengthDelimited, encode.length_delimited(pb_module_1.encode_item(value)))
       option.None -> <<>>
-    }], [case root.token {
+    }], [case message.token {
       option.Some(value) -> encode.field(3, wire.LengthDelimited, encode.length_delimited(pb_module_2.encode_token(value)))
       option.None -> <<>>
-    }], [encode.int32_field(4, pb_module_0.encode_envelope_state_value(root.state))], [case root.optional_state {
+    }], [encode.int32_field(4, pb_module_0.encode_envelope_state_value(message.state))], [case message.optional_state {
       option.Some(value) -> encode.int32_field(5, pb_module_0.encode_envelope_state_value(value))
       option.None -> <<>>
-    }], [case root.next {
+    }], [case message.next {
       option.Some(value) -> encode.field(10, wire.LengthDelimited, encode.length_delimited(encode_root(value)))
       option.None -> <<>>
-    }], [case root.pick {
+    }], [case message.pick {
       option.Some(oneof_value) -> {
         case oneof_value {
       RootPickChosen(value) -> encode.field(11, wire.LengthDelimited, encode.length_delimited(pb_module_0.encode_envelope_item(value)))

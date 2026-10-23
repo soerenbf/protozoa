@@ -37,20 +37,20 @@ pub type BaseMessage {
   )
 }
 
-pub fn encode_app_message(app_message: AppMessage) -> BitArray {
+pub fn encode_app_message(message: AppMessage) -> BitArray {
   encode.message([
-    case app_message.base {
+    case message.base {
       option.Some(value) -> encode.field(1, wire.LengthDelimited, encode.length_delimited(encode_base_message(value)))
       option.None -> <<>>
     },
-    encode.int32_field(2, encode_base_status_value(app_message.status)),
+    encode.int32_field(2, encode_base_status_value(message.status)),
   ])
 }
 
-pub fn encode_base_message(base_message: BaseMessage) -> BitArray {
+pub fn encode_base_message(message: BaseMessage) -> BitArray {
   encode.message([
-    encode.string_field(1, base_message.id),
-    encode.int32_field(2, encode_base_status_value(base_message.status)),
+    encode.string_field(1, message.id),
+    encode.int32_field(2, encode_base_status_value(message.status)),
   ])
 }
 

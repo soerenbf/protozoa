@@ -59,15 +59,17 @@ fn resolve_message_types(msg: Message, ctx: Context) -> Message {
 
 /// Generate encoder for a single message
 pub fn generate_encoder(message: Message, ctx: Context) -> String {
-  // Get qualified names for function, type, and parameter
+  // Get qualified names for function and type
   let qualified_fn_name = types.qualified_fn(message.name, ctx)
   let qualified_type_name = types.qualified_type(message.name, ctx)
   let function_name = "encode_" <> qualified_fn_name
   let is_empty = list.is_empty(message.fields) && list.is_empty(message.oneofs)
 
+  // Field temporaries end in _fields; helper payloads use value, oneof_value,
+  // v, pair, and key, so none can shadow this schema-independent argument.
   let param_name = case is_empty {
-    True -> "_" <> qualified_fn_name
-    False -> types.escape_keyword(qualified_fn_name)
+    True -> "_message"
+    False -> "message"
   }
 
   // Separate different field types

@@ -44,14 +44,14 @@ pub type ListValue {
   )
 }
 
-pub fn encode_list_value(list_value: ListValue) -> BitArray {
-  let values_fields = list.map(list_value.values, fn(v) { encode.field(1, wire.LengthDelimited, encode.length_delimited(encode_value(v))) })
+pub fn encode_list_value(message: ListValue) -> BitArray {
+  let values_fields = list.map(message.values, fn(v) { encode.field(1, wire.LengthDelimited, encode.length_delimited(encode_value(v))) })
   encode.message(values_fields)
 }
 
-pub fn encode_value(value: Value) -> BitArray {
+pub fn encode_value(message: Value) -> BitArray {
   encode.message([
-    case value.kind {
+    case message.kind {
       option.Some(oneof_value) -> {
         case oneof_value {
       ValueKindNullValue(value) -> encode.int32_field(1, encode_null_value_value(value))
@@ -67,8 +67,8 @@ pub fn encode_value(value: Value) -> BitArray {
   ])
 }
 
-pub fn encode_struct(struct: Struct) -> BitArray {
-  let fields_fields = list.map(struct.fields, fn(pair) { let #(key, value) = pair
+pub fn encode_struct(message: Struct) -> BitArray {
+  let fields_fields = list.map(message.fields, fn(pair) { let #(key, value) = pair
     encode.field(1, wire.LengthDelimited, encode.length_delimited(encode.message([encode.string_field(1, key), encode.field(2, wire.LengthDelimited, encode.length_delimited(encode_value(value)))]))) })
   encode.message(fields_fields)
 }

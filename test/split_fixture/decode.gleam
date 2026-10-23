@@ -13,9 +13,9 @@ pub type Token {
   )
 }
 
-pub fn encode_token(token: Token) -> BitArray {
+pub fn encode_token(message: Token) -> BitArray {
   encode.message([
-    encode.string_field(1, token.text),
+    encode.string_field(1, message.text),
   ])
 }
 

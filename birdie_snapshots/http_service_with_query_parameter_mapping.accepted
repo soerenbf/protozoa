@@ -62,45 +62,45 @@ pub type TestListResponse {
   )
 }
 
-pub fn encode_test_list_response(test_list_response: TestListResponse) -> BitArray {
-  let temperatures_fields = list.map(test_list_response.temperatures, fn(v) { encode.field(1, wire.LengthDelimited, encode.length_delimited(encode_test_temperature_response(v))) })
-  encode.message(list.flatten([temperatures_fields, [encode.int32_field(2, test_list_response.total)]]))
+pub fn encode_test_list_response(message: TestListResponse) -> BitArray {
+  let temperatures_fields = list.map(message.temperatures, fn(v) { encode.field(1, wire.LengthDelimited, encode.length_delimited(encode_test_temperature_response(v))) })
+  encode.message(list.flatten([temperatures_fields, [encode.int32_field(2, message.total)]]))
 }
 
-pub fn encode_test_list_request(test_list_request: TestListRequest) -> BitArray {
+pub fn encode_test_list_request(message: TestListRequest) -> BitArray {
   encode.message([
-    encode.int32_field(1, test_list_request.limit),
-    encode.int32_field(2, test_list_request.offset),
+    encode.int32_field(1, message.limit),
+    encode.int32_field(2, message.offset),
   ])
 }
 
-pub fn encode_test_delete_response(test_delete_response: TestDeleteResponse) -> BitArray {
+pub fn encode_test_delete_response(message: TestDeleteResponse) -> BitArray {
   encode.message([
-    encode.bool_field(1, test_delete_response.success),
-    encode.string_field(2, test_delete_response.message),
+    encode.bool_field(1, message.success),
+    encode.string_field(2, message.message),
   ])
 }
 
-pub fn encode_test_delete_request(test_delete_request: TestDeleteRequest) -> BitArray {
+pub fn encode_test_delete_request(message: TestDeleteRequest) -> BitArray {
   encode.message([
-    encode.int32_field(1, test_delete_request.id),
+    encode.int32_field(1, message.id),
   ])
 }
 
-pub fn encode_test_temperature_response(test_temperature_response: TestTemperatureResponse) -> BitArray {
+pub fn encode_test_temperature_response(message: TestTemperatureResponse) -> BitArray {
   encode.message([
-    encode.int32_field(1, test_temperature_response.fahrenheit),
-    encode.string_field(2, test_temperature_response.message),
+    encode.int32_field(1, message.fahrenheit),
+    encode.string_field(2, message.message),
   ])
 }
 
-pub fn encode_test_temperature_request(test_temperature_request: TestTemperatureRequest) -> BitArray {
+pub fn encode_test_temperature_request(message: TestTemperatureRequest) -> BitArray {
   encode.message([
-    encode.int32_field(1, test_temperature_request.id),
-    encode.int32_field(2, test_temperature_request.celsius),
-    encode.string_field(3, test_temperature_request.location),
-    encode.bool_field(4, test_temperature_request.use_cache),
-    encode.float_field(5, test_temperature_request.precision),
+    encode.int32_field(1, message.id),
+    encode.int32_field(2, message.celsius),
+    encode.string_field(3, message.location),
+    encode.bool_field(4, message.use_cache),
+    encode.float_field(5, message.precision),
   ])
 }
 

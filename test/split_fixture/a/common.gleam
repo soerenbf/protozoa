@@ -32,19 +32,19 @@ pub type Envelope {
   Envelope
 }
 
-pub fn encode_envelope(_envelope: Envelope) -> BitArray {
+pub fn encode_envelope(_message: Envelope) -> BitArray {
   encode.message([])
 }
 
-pub fn encode_envelope_item(envelope_item: EnvelopeItem) -> BitArray {
+pub fn encode_envelope_item(message: EnvelopeItem) -> BitArray {
   encode.message([
-    encode.string_field(1, envelope_item.text),
+    encode.string_field(1, message.text),
   ])
 }
 
-pub fn encode_value(value: Value) -> BitArray {
+pub fn encode_value(message: Value) -> BitArray {
   encode.message([
-    encode.string_field(1, value.text),
+    encode.string_field(1, message.text),
   ])
 }
 

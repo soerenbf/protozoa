@@ -31,28 +31,28 @@ pub type Root {
   )
 }
 
-pub fn encode_root(root: Root) -> BitArray {
+pub fn encode_root(message: Root) -> BitArray {
   encode.message([
-    case root.x {
+    case message.x {
       option.Some(value) -> encode.field(1, wire.LengthDelimited, encode.length_delimited(encode_x(value)))
       option.None -> <<>>
     },
   ])
 }
 
-pub fn encode_p(_p: P) -> BitArray {
+pub fn encode_p(_message: P) -> BitArray {
   encode.message([])
 }
 
-pub fn encode_px(px: PX) -> BitArray {
+pub fn encode_px(message: PX) -> BitArray {
   encode.message([
-    encode.int32_field(1, px.number),
+    encode.int32_field(1, message.number),
   ])
 }
 
-pub fn encode_x(x: X) -> BitArray {
+pub fn encode_x(message: X) -> BitArray {
   encode.message([
-    encode.string_field(1, x.text),
+    encode.string_field(1, message.text),
   ])
 }
 
