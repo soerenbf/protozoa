@@ -47,6 +47,29 @@ pub fn valid_prefix(prefix: String) -> Result(Nil, String) {
   }
 }
 
+/// Map a safe schema `path` beneath validated `prefix`; errors identify the input.
+/// Example: `module_path("api.proto", "generated")`.
+pub fn module_path(path: String, prefix: String) -> Result(String, String) {
+  use _ <- result.try(safe_source(path))
+  use _ <- result.try(valid_prefix(prefix))
+  use stem <- result.try(case string.ends_with(path, ".proto") {
+    True -> Ok(string.drop_end(path, 6))
+    False -> Error("Expected .proto schema path: " <> path)
+  })
+  let module =
+    prefix
+    <> "/"
+    <> {
+      stem
+      |> string.split("/")
+      |> list.map(justin.snake_case)
+      |> string.join("/")
+    }
+  valid_prefix(module)
+  |> result.map(fn(_) { module })
+  |> result.map_error(fn(error) { error <> " from schema " <> path })
+}
+
 fn valid_segment(segment: String) -> Bool {
   let chars =
     string.to_utf_codepoints(segment) |> list.map(string.utf_codepoint_to_int)
@@ -75,23 +98,7 @@ pub fn plan(
   use modules <- result.try(
     list.try_fold(list.sort(paths, string.compare), dict.new(), fn(acc, path) {
       use _ <- result.try(safe_source(path))
-      use stem <- result.try(case string.ends_with(path, ".proto") {
-        True -> Ok(string.drop_end(path, 6))
-        False -> Error("Expected .proto schema path: " <> path)
-      })
-      let module =
-        prefix
-        <> "/"
-        <> {
-          stem
-          |> string.split("/")
-          |> list.map(justin.snake_case)
-          |> string.join("/")
-        }
-      use _ <- result.try(
-        valid_prefix(module)
-        |> result.map_error(fn(error) { error <> " from schema " <> path }),
-      )
+      use module <- result.try(module_path(path, prefix))
       case
         list.find(dict.to_list(acc), fn(item) {
           item.1 == module && item.0 != path
@@ -124,13 +131,17 @@ pub fn plan(
       Ok(Declaration(entry.0, entry.1, module, name, justin.snake_case(name)))
     })
     |> list.sort(fn(a, b) { string.compare(a.identity, b.identity) })
-  use _ <- result.try(validate_symbols(declarations, registry))
+  use _ <- result.try(validate_symbols(declarations, registry, []))
   Ok(declarations)
 }
 
-fn validate_symbols(
+/// Validate schema and extension `symbols` together (module:kind:name, owner).
+/// Kinds are type, constructor and fn; errors identify conflicting owners.
+/// Example: `validate_symbols(declarations, registry, symbols)`.
+pub fn validate_symbols(
   declarations: List(Declaration),
   registry: TypeRegistry,
+  extra: List(#(String, String)),
 ) -> Result(Nil, String) {
   use _ <- result.try(
     list.try_each(declarations, fn(d) {
@@ -253,6 +264,17 @@ fn validate_symbols(
         }),
       )
     })
+  let symbols = list.append(symbols, extra)
+  use _ <- result.try(
+    list.try_each(symbols, fn(item) {
+      let assert [module, kind, name] = string.split(item.0, ":")
+      let source =
+        list.find(declarations, fn(d) { d.module == module })
+        |> result.map(fn(d) { d.source })
+        |> result.unwrap(item.1)
+      validate_identifier(kind, name, item.1, source)
+    }),
+  )
   use _ <- result.try(
     list.try_fold(symbols, dict.new(), fn(seen, item) {
       case dict.get(seen, item.0) {
@@ -270,4 +292,51 @@ fn validate_symbols(
     }),
   )
   Ok(Nil)
+}
+
+fn validate_identifier(
+  kind: String,
+  name: String,
+  identity: String,
+  source: String,
+) -> Result(Nil, String) {
+  let valid = case kind {
+    "fn" -> valid_segment(name)
+    _ -> {
+      let chars =
+        string.to_utf_codepoints(name) |> list.map(string.utf_codepoint_to_int)
+      case chars {
+        [first, ..rest] ->
+          first >= 65
+          && first <= 90
+          && list.all(rest, fn(c) {
+            c >= 65
+            && c <= 90
+            || c >= 97
+            && c <= 122
+            || c >= 48
+            && c <= 57
+            || c == 95
+          })
+        [] -> False
+      }
+    }
+  }
+  let reserved =
+    kind == "constructor"
+    && list.contains(["False", "True", "Ok", "Error", "Nil"], name)
+  case valid && !reserved {
+    True -> Ok(Nil)
+    False ->
+      Error(
+        "Invalid or reserved Gleam "
+        <> kind
+        <> " identifier `"
+        <> name
+        <> "` from "
+        <> identity
+        <> " in "
+        <> source,
+      )
+  }
 }

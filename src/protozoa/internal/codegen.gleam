@@ -1334,6 +1334,18 @@ pub type GeneratedModule {
   GeneratedModule(module: String, source: String)
 }
 
+/// File-owned extension fragment, assembled with codecs under one import plan.
+/// References are resolved protobuf identities; symbols use module:kind:name keys.
+pub type ModuleFragment {
+  ModuleFragment(
+    source: String,
+    body: String,
+    imports: List(String),
+    references: List(String),
+    symbols: List(#(String, String)),
+  )
+}
+
 /// Render resolved `files` and their original `registry` beneath `prefix`.
 /// Returns sources sorted by module path; service-only files are omitted.
 /// Errors cover invalid placement, unresolved fields and required module cycles.
@@ -1343,6 +1355,19 @@ pub fn generate_modules(
   files: List(Path),
   registry: TypeRegistry,
   prefix: String,
+) -> Result(List(GeneratedModule), String) {
+  generate_modules_with_fragments(files, registry, prefix, [])
+}
+
+/// Assemble codec and extension fragments for `files` beneath `prefix`.
+/// Validates shared namespaces and required dependencies before rendering.
+/// Returns ordered modules or source diagnostics; writes nothing.
+/// Example: `generate_modules_with_fragments(files, registry, "generated", [])`.
+pub fn generate_modules_with_fragments(
+  files: List(Path),
+  registry: TypeRegistry,
+  prefix: String,
+  fragments: List(ModuleFragment),
 ) -> Result(List(GeneratedModule), String) {
   use declarations <- result.try(placement.plan(
     registry,
@@ -1358,7 +1383,21 @@ pub fn generate_modules(
       )
     }),
   )
-  use _ <- result.try(dependencies.check(registry))
+  use _ <- result.try(placement.validate_symbols(
+    declarations,
+    registry,
+    list.flat_map(fragments, fn(f) { f.symbols }),
+  ))
+  let edges =
+    list.flat_map(fragments, fn(f) {
+      list.filter_map(f.references, fn(identity) {
+        use d <- result.try(
+          list.find(declarations, fn(d) { d.identity == identity }),
+        )
+        Ok(#(f.source, d.source))
+      })
+    })
+  use _ <- result.try(dependencies.check_with_edges(registry, edges))
   // An ordinal alias from the sorted complete module set cannot collide with
   // runtime imports or same-basename owners, even when paths contain underscores.
   let aliases =
@@ -1371,9 +1410,15 @@ pub fn generate_modules(
     })
     |> dict.from_list
   files
-  |> list.filter(fn(f) { list.any(declarations, fn(d) { d.source == f.path }) })
+  |> list.filter(fn(f) {
+    list.any(declarations, fn(d) { d.source == f.path })
+    || list.any(fragments, fn(fragment) { fragment.source == f.path })
+  })
   |> list.try_map(fn(f) {
-    let assert Ok(owner) = list.find(declarations, fn(d) { d.source == f.path })
+    let assert Ok(module) = placement.module_path(f.path, prefix)
+    let fragment =
+      list.find(fragments, fn(fragment) { fragment.source == f.path })
+      |> result.unwrap(ModuleFragment(f.path, "", [], [], []))
     let references =
       declarations
       |> list.map(fn(d) {
@@ -1394,6 +1439,7 @@ pub fn generate_modules(
         list.append(m.fields, list.flat_map(m.oneofs, fn(o) { o.fields }))
         |> list.flat_map(fn(field) { referenced_types(field.field_type) })
       })
+      |> list.append(fragment.references)
       |> list.unique
     use owners <- result.try(
       list.try_map(referenced, fn(identity) {
@@ -1409,7 +1455,7 @@ pub fn generate_modules(
     let imports =
       owners
       |> list.map(fn(d) { d.module })
-      |> list.filter(fn(module) { module != owner.module })
+      |> list.filter(fn(owner_module) { owner_module != module })
       |> list.unique
       |> list.sort(string.compare)
       |> list.map(fn(module) {
@@ -1439,6 +1485,7 @@ pub fn generate_modules(
         encoders.generate_encoders(f.content.messages, ctx),
         decoders.generate_decoders(f.content.messages, ctx),
         encoders.generate_enum_helpers(f.content.enums, f.content.messages, ctx),
+        fragment.body,
       ]
       |> list.filter(fn(part) { !string.is_empty(part) })
       |> string.join("\n\n")
@@ -1453,7 +1500,7 @@ pub fn generate_modules(
       [
         generate_combined_file_header([f]),
         string.join(
-          list.append(runtime_imports, imports)
+          list.append(list.append(runtime_imports, fragment.imports), imports)
             |> list.unique
             |> list.sort(string.compare),
           "\n",
@@ -1462,7 +1509,7 @@ pub fn generate_modules(
       ]
       |> list.filter(fn(part) { !string.is_empty(part) })
       |> string.join("\n\n")
-    Ok(GeneratedModule(owner.module, source))
+    Ok(GeneratedModule(module, source))
   })
   |> result.map(fn(modules) {
     list.sort(modules, fn(a, b) { string.compare(a.module, b.module) })

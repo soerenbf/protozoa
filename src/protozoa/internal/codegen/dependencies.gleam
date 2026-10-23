@@ -12,7 +12,26 @@ import protozoa/parser/proto
 /// Same-file recursion and unused proto imports do not create edges.
 /// Example: `check(registry)`.
 pub fn check(registry: TypeRegistry) -> Result(Nil, String) {
-  let graph = graph(registry)
+  check_with_edges(registry, [])
+}
+
+/// Check codec dependencies plus extension source-to-source `edges`.
+/// Returns a cycle diagnostic before writes. Example: `check_with_edges(registry, [])`.
+pub fn check_with_edges(
+  registry: TypeRegistry,
+  edges: List(#(String, String)),
+) -> Result(Nil, String) {
+  let graph =
+    list.fold(edges, graph(registry), fn(graph, edge) {
+      case edge.0 == edge.1 {
+        True -> graph
+        False ->
+          dict.insert(graph, edge.0, [
+            edge.1,
+            ..{ dict.get(graph, edge.0) |> result.unwrap([]) }
+          ])
+      }
+    })
   use _ <- result.try(
     list.try_fold(
       dict.keys(graph) |> list.sort(string.compare),

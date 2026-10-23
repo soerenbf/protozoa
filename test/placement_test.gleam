@@ -151,3 +151,30 @@ pub fn prelude_names_test() {
     )
   let assert Ok(_) = placement.plan(registry, ["a.proto"], "gen")
 }
+
+/// Schema constructors cannot shadow runtime/prelude constructors.
+pub fn emitted_identifier_rejections_test() {
+  list.each(["False", "True", "Ok", "Error", "_", "_123"], fn(name) {
+    let registry =
+      add(
+        type_registry.new(),
+        "a.proto",
+        "package p; message "
+          <> name
+          <> " { bool value = 1; } enum State { ZERO = 0; }",
+      )
+    let assert Error(error) = placement.plan(registry, ["a.proto"], "gen")
+    let assert True = string.contains(error, "p." <> name)
+    let assert True = string.contains(error, "a.proto")
+  })
+  reject("package p; message Outer { message _ {} }", "p.Outer._")
+  reject("package p; enum State { _ = 0; }", "p.State._")
+  reject("package p; enum State { _123 = 0; }", "p.State._123")
+  let registry =
+    add(
+      type_registry.new(),
+      "a.proto",
+      "package p; message Outer { message False {} message Ok {} message _123 {} }",
+    )
+  let assert Ok(_) = placement.plan(registry, ["a.proto"], "gen")
+}
