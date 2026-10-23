@@ -11,6 +11,7 @@ import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/result
 import gleam/set
+import gleam/string
 import nibble
 import nibble/lexer
 import protozoa/parser/combinator as c
@@ -44,8 +45,14 @@ type TopLevelItem {
   ItemMessage(proto.Message)
   ItemEnum(proto.Enum)
   ItemService(proto.Service)
+  ItemPackage(String)
+  ItemImport(proto.Import)
+  ItemOption
 }
 
+/// Describe `error`, including token positions for syntax failures.
+/// Returns a diagnostic string; this function does not fail.
+/// Example: `describe_error(InvalidFieldNumber("A", "x", 0))`.
 pub fn describe_error(error: ParseError) -> String {
   case error {
     LexError(lex_error) ->
@@ -59,7 +66,8 @@ pub fn describe_error(error: ParseError) -> String {
           <> lexeme
       }
     ParseError(dead_ends) -> {
-      "Parse error: " <> int.to_string(list.length(dead_ends)) <> " errors"
+      "Parse error: "
+      <> string.join(list.map(dead_ends, describe_dead_end), "; ")
     }
     InvalidFieldNumber(message, field, number) ->
       "Invalid field number "
@@ -78,9 +86,30 @@ pub fn describe_error(error: ParseError) -> String {
   }
 }
 
+fn describe_dead_end(
+  dead_end: nibble.DeadEnd(token.ProtoToken, Nil),
+) -> String {
+  let problem = case dead_end.problem {
+    nibble.BadParser(message) | nibble.Custom(message) -> message
+    nibble.EndOfInput -> "unexpected end of input"
+    nibble.Expected(expected, got) ->
+      "expected " <> expected <> ", got " <> token.describe(got)
+    nibble.Unexpected(got) -> "unexpected " <> token.describe(got)
+  }
+  int.to_string(dead_end.pos.row_start)
+  <> ":"
+  <> int.to_string(dead_end.pos.col_start)
+  <> " - "
+  <> problem
+}
+
 // ---- MAIN PARSER ----
 
-/// Parse a complete proto file from source text
+/// Parse all of `content` as proto3 source, preserving declaration and field order.
+/// Returns lexical, syntax (including unsupported or incomplete input), or field
+/// validation errors. File language options and reservations are consumed but not
+/// represented in the codec-oriented AST.
+/// Example: `parse("syntax = 'proto3'; message A { string x = 1; }")`.
 pub fn parse(content: String) -> Result(ProtoFile, ParseError) {
   // Step 1: Lex
   use tokens <- result.try(
@@ -103,11 +132,31 @@ pub fn parse(content: String) -> Result(ProtoFile, ParseError) {
 
 fn proto_file_parser() {
   use syntax <- nibble.do(proto.syntax())
-  use package <- nibble.do(proto.package())
-  use imports <- nibble.do(proto.imports())
   // Parse all top-level items (messages, enums, services) in ANY order
   use items <- nibble.do(c.many(top_level_item()))
-  // Note: We don't require EOF to allow trailing content
+  use _ <- nibble.do(nibble.eof())
+  let packages =
+    list.filter_map(items, fn(item) {
+      case item {
+        ItemPackage(name) -> Ok(name)
+        _ -> Error(Nil)
+      }
+    })
+  use _ <- nibble.do(nibble.guard(
+    list.length(packages) <= 1,
+    "only one package declaration is allowed",
+  ))
+  let package = case list.first(packages) {
+    Ok(value) -> Some(value)
+    Error(_) -> None
+  }
+  let imports =
+    list.filter_map(items, fn(item) {
+      case item {
+        ItemImport(value) -> Ok(value)
+        _ -> Error(Nil)
+      }
+    })
 
   // Separate messages, enums, and services from items
   let #(messages, enums, services) = partition_items(items)
@@ -124,6 +173,9 @@ fn proto_file_parser() {
 
 fn top_level_item() {
   nibble.one_of([
+    proto.package_declaration() |> nibble.map(ItemPackage),
+    proto.import_statement() |> nibble.map(ItemImport),
+    proto.file_option() |> nibble.replace(ItemOption),
     proto.message() |> nibble.map(ItemMessage),
     proto.enum_def() |> nibble.map(ItemEnum),
     proto.service() |> nibble.map(ItemService),
@@ -150,6 +202,8 @@ fn partition_items_helper(
       partition_items_helper(rest, messages, [enum, ..enums], services)
     [ItemService(service), ..rest] ->
       partition_items_helper(rest, messages, enums, [service, ..services])
+    [ItemPackage(_), ..rest] | [ItemImport(_), ..rest] | [ItemOption, ..rest] ->
+      partition_items_helper(rest, messages, enums, services)
   }
 }
 
@@ -214,7 +268,10 @@ fn has_duplicates(numbers: List(Int)) -> Option(Int) {
   has_duplicates_helper(numbers, set.new())
 }
 
-fn has_duplicates_helper(numbers: List(Int), seen: set.Set(Int)) -> Option(Int) {
+fn has_duplicates_helper(
+  numbers: List(Int),
+  seen: set.Set(Int),
+) -> Option(Int) {
   case numbers {
     [] -> None
     [num, ..rest] ->

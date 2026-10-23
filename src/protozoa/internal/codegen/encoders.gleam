@@ -36,7 +36,7 @@ fn resolve_message_types(msg: Message, ctx: Context) -> Message {
         field_type: type_registry.resolve_field_type(
           ctx.registry,
           field.field_type,
-          ctx.package,
+          type_registry.make_fully_qualified_name(ctx.package, msg.name),
         ),
       )
     })
@@ -50,7 +50,7 @@ fn resolve_message_types(msg: Message, ctx: Context) -> Message {
             field_type: type_registry.resolve_field_type(
               ctx.registry,
               field.field_type,
-              ctx.package,
+              type_registry.make_fully_qualified_name(ctx.package, msg.name),
             ),
           )
         })
@@ -95,7 +95,7 @@ pub fn generate_encoder(message: Message, ctx: Context) -> String {
   let regular_encoders =
     generate_regular_field_encoders(regular_fields, param_name)
   let oneof_encoders =
-    generate_oneof_encoders(message.oneofs, message, param_name)
+    generate_oneof_encoders(message.oneofs, qualified_type_name, param_name)
   let repeated_code = generate_repeated_fields_code(repeated_fields, param_name)
   let map_code = generate_map_fields_code(map_fields, param_name)
 
@@ -128,17 +128,30 @@ pub fn generate_enum_helpers(
   ctx: Context,
 ) -> String {
   let all_enums = collect_all_enums_flattened(top_level_enums, messages)
-  let enums_in_oneofs = collect_enum_names_in_oneofs(messages)
+  let enums_in_oneofs = collect_enum_names_in_oneofs(messages, ctx)
 
   all_enums
   |> list.map(fn(enum) { generate_enum_helper(enum, enums_in_oneofs, ctx) })
   |> string.join("\n\n")
 }
 
-/// Collect names of enums that are used as oneof field types
-fn collect_enum_names_in_oneofs(messages: List(Message)) -> set.Set(String) {
-  let all_messages = collect_all_messages_flattened(messages)
+/// Collect enums needing a field decoder for oneof or optional presence.
+fn collect_enum_names_in_oneofs(
+  messages: List(Message),
+  ctx: Context,
+) -> set.Set(String) {
+  let all_messages =
+    collect_all_messages_flattened(messages)
+    |> list.map(fn(msg) { resolve_message_types(msg, ctx) })
   list.fold(all_messages, set.new(), fn(acc, msg) {
+    let acc =
+      list.fold(msg.fields, acc, fn(field_acc, field) {
+        case field.field_type {
+          proto.Optional(proto.EnumType(name)) ->
+            set.insert(field_acc, flatten_type_name(name))
+          _ -> field_acc
+        }
+      })
     list.fold(msg.oneofs, acc, fn(inner_acc, oneof) {
       list.fold(oneof.fields, inner_acc, fn(field_acc, field) {
         case field.field_type {
@@ -163,12 +176,12 @@ fn generate_regular_field_encoders(
 
 fn generate_oneof_encoders(
   oneofs: List(proto.Oneof),
-  message: Message,
+  message_name: String,
   param_name: String,
 ) -> List(String) {
   oneofs
   |> list.map(fn(oneof) {
-    generate_oneof_encoder(message.name, oneof, param_name)
+    generate_oneof_encoder(message_name, oneof, param_name)
   })
 }
 
@@ -207,11 +220,11 @@ fn build_encoder_body(
 ) -> String {
   let repeated_field_vars =
     repeated_fields
-    |> list.map(fn(field) { string.lowercase(field.name) <> "_fields" })
+    |> list.map(fn(field) { types.field_name(field.name) <> "_fields" })
 
   let map_field_vars =
     map_fields
-    |> list.map(fn(field) { string.lowercase(field.name) <> "_fields" })
+    |> list.map(fn(field) { types.field_name(field.name) <> "_fields" })
 
   let all_vars = list.flatten([repeated_field_vars, map_field_vars])
   let all_regular = list.append(regular_encoders, oneof_encoders)
@@ -254,13 +267,19 @@ fn build_list_flattening(vars: List(String)) -> String {
 }
 
 fn generate_field_encoder(field: Field, param_name: String) -> String {
-  let escaped_field_name = types.escape_keyword(field.name)
+  let escaped_field_name = types.field_name(field.name)
   let field_access = param_name <> "." <> escaped_field_name
   let field_num = int.to_string(field.number)
 
   case field.field_type {
     proto.Optional(inner) ->
       generate_optional_field_encoder_typed(inner, field_access, field_num)
+    proto.MessageType(_) ->
+      generate_optional_field_encoder_typed(
+        field.field_type,
+        field_access,
+        field_num,
+      )
     proto.Repeated(_) -> "// Repeated fields handled separately"
     _ ->
       generate_required_field_encoder(field.field_type, field_access, field_num)
@@ -334,25 +353,15 @@ fn generate_oneof_encoder(
   oneof: proto.Oneof,
   param_name: String,
 ) -> String {
-  let escaped_oneof_name = types.escape_keyword(oneof.name)
+  let escaped_oneof_name = types.field_name(oneof.name)
   let oneof_access = param_name <> "." <> escaped_oneof_name
-  let _type_name =
-    capitalize_first(message_name) <> capitalize_first(oneof.name)
+  let type_name = capitalize_first(message_name) <> capitalize_first(oneof.name)
 
   let cases =
     oneof.fields
     |> list.map(fn(field) {
-      let base_variant_name = capitalize_first(field.name)
       let field_num = int.to_string(field.number)
-      let _gleam_type = get_type_name(field.field_type)
-      // Avoid naming conflicts with well-known types
-      let variant_name = case base_variant_name, field.field_type {
-        "Empty", proto.MessageType("google.protobuf.Empty") -> "EmptyData"
-        "StringValue", proto.String -> "StringValueVariant"
-        "BoolValue", proto.Bool -> "BoolValueVariant"
-        "ListValue", proto.MessageType("ListValue") -> "ListValueVariant"
-        name, _ -> name
-      }
+      let variant_name = types.constructor(type_name, field.name)
       let encoder =
         generate_required_field_encoder(field.field_type, "value", field_num)
       "      " <> variant_name <> "(value) -> " <> encoder
@@ -367,8 +376,8 @@ fn generate_oneof_encoder(
 }
 
 fn generate_repeated_field_code(field: Field, param_name: String) -> String {
-  let escaped_field_name = types.escape_keyword(field.name)
-  let field_name = string.lowercase(escaped_field_name)
+  let escaped_field_name = types.field_name(field.name)
+  let field_name = escaped_field_name
   let var_name = field_name <> "_fields"
   let field_access = param_name <> "." <> escaped_field_name
   let field_num = int.to_string(field.number)
@@ -388,7 +397,10 @@ fn generate_repeated_field_code(field: Field, param_name: String) -> String {
   }
 }
 
-fn generate_repeated_item_encoder(proto_type: Type, field_num: String) -> String {
+fn generate_repeated_item_encoder(
+  proto_type: Type,
+  field_num: String,
+) -> String {
   case proto_type {
     proto.String -> "encode.string_field(" <> field_num <> ", v)"
     proto.Int32 -> "encode.int32_field(" <> field_num <> ", v)"
@@ -414,8 +426,8 @@ fn generate_repeated_item_encoder(proto_type: Type, field_num: String) -> String
 }
 
 fn generate_map_field_code(field: Field, param_name: String) -> String {
-  let escaped_field_name = types.escape_keyword(field.name)
-  let field_name = string.lowercase(escaped_field_name)
+  let escaped_field_name = types.field_name(field.name)
+  let field_name = escaped_field_name
   let var_name = field_name <> "_fields"
   let field_access = param_name <> "." <> escaped_field_name
   let field_num = int.to_string(field.number)
@@ -498,16 +510,22 @@ fn generate_enum_helper(
   let qualified_fn_name = types.qualified_fn(enum.name, ctx)
 
   let encoder_function =
-    generate_enum_encoder(enum, qualified_type_name, qualified_fn_name)
+    generate_enum_encoder(enum, qualified_type_name, qualified_fn_name, ctx)
   let decoder_function =
     generate_enum_decoder(
       enum,
       enums_in_oneofs,
       qualified_type_name,
       qualified_fn_name,
+      ctx,
     )
   let value_decoder_function =
-    generate_enum_value_decoder(enum, qualified_type_name, qualified_fn_name)
+    generate_enum_value_decoder(
+      enum,
+      qualified_type_name,
+      qualified_fn_name,
+      ctx,
+    )
   let repeated_decoder_function =
     generate_repeated_enum_decoder(enum, qualified_type_name, qualified_fn_name)
   encoder_function
@@ -523,12 +541,14 @@ fn generate_enum_encoder(
   enum: proto.Enum,
   qualified_type_name: String,
   qualified_fn_name: String,
+  ctx: Context,
 ) -> String {
   let function_name = "encode_" <> qualified_fn_name <> "_value"
   let cases =
     enum.values
     |> list.map(fn(variant) {
-      let variant_name = capitalize_first(variant.name)
+      let variant_name =
+        types.enum_constructor(qualified_type_name, variant.name, ctx)
       "    " <> variant_name <> " -> " <> int.to_string(variant.number)
     })
     |> string.join("\n")
@@ -547,12 +567,14 @@ fn generate_enum_decoder(
   enums_in_oneofs: set.Set(String),
   qualified_type_name: String,
   qualified_fn_name: String,
+  ctx: Context,
 ) -> String {
   let function_name = "decode_" <> qualified_fn_name <> "_field"
   let decode_cases =
     enum.values
     |> list.map(fn(variant) {
-      let variant_name = capitalize_first(variant.name)
+      let variant_name =
+        types.enum_constructor(qualified_type_name, variant.name, ctx)
       "          "
       <> int.to_string(variant.number)
       <> " -> Ok("
@@ -561,13 +583,17 @@ fn generate_enum_decoder(
     })
     |> string.join("\n")
 
+  let default = case enum.values {
+    [first, ..] -> types.enum_constructor(qualified_type_name, first.name, ctx)
+    [] -> qualified_type_name
+  }
   let main_decoder =
     "pub fn "
     <> function_name
     <> "(field_num: Int) -> decode.Decoder("
     <> qualified_type_name
     <> ") {\n"
-    <> "  decode.field(field_num, fn(field) {\n"
+    <> "  decode.field_with_default(field_num, fn(field) {\n"
     <> "    use value <- result.try(decode.int32_field(field))\n"
     <> "    case value {\n"
     <> decode_cases
@@ -578,12 +604,13 @@ fn generate_enum_decoder(
     <> string.lowercase(qualified_fn_name)
     <> " value: \" <> string.inspect(value), path: []))\n"
     <> "    }\n"
-    <> "  })\n"
+    <> "  }, "
+    <> default
+    <> ")\n"
     <> "}"
 
-  // Only generate the _from_field helper if this enum is used in a oneof
-  // Use flattened enum name for the check since that's how oneofs track them
-  case set.contains(enums_in_oneofs, flatten_type_name(enum.name)) {
+  // Optional fields and oneofs both decode an enum from a runtime field.
+  case set.contains(enums_in_oneofs, qualified_type_name) {
     True ->
       main_decoder
       <> "\n\n"
@@ -591,6 +618,7 @@ fn generate_enum_decoder(
         enum,
         qualified_type_name,
         qualified_fn_name,
+        ctx,
       )
     False -> main_decoder
   }
@@ -600,12 +628,14 @@ fn generate_enum_field_decoder(
   enum: proto.Enum,
   qualified_type_name: String,
   qualified_fn_name: String,
+  ctx: Context,
 ) -> String {
   let function_name = "decode_" <> qualified_fn_name <> "_from_field"
   let decode_cases =
     enum.values
     |> list.map(fn(variant) {
-      let variant_name = capitalize_first(variant.name)
+      let variant_name =
+        types.enum_constructor(qualified_type_name, variant.name, ctx)
       "      "
       <> int.to_string(variant.number)
       <> " -> Ok("
@@ -636,12 +666,14 @@ fn generate_enum_value_decoder(
   enum: proto.Enum,
   qualified_type_name: String,
   qualified_fn_name: String,
+  ctx: Context,
 ) -> String {
   let function_name = "decode_" <> qualified_fn_name <> "_value"
   let decode_cases =
     enum.values
     |> list.map(fn(variant) {
-      let variant_name = capitalize_first(variant.name)
+      let variant_name =
+        types.enum_constructor(qualified_type_name, variant.name, ctx)
       "    "
       <> int.to_string(variant.number)
       <> " -> Ok("
@@ -677,15 +709,15 @@ fn generate_repeated_enum_decoder(
   <> "(field_num: Int) -> decode.Decoder(List("
   <> qualified_type_name
   <> ")) {\n"
-  <> "  decode.repeated_field(field_num, fn(field) {\n"
-  <> "    use value <- result.try(decode.int32_field(field))\n"
-  <> "    decode_"
+  <> "  use values <- decode.then(decode.repeated_int32(field_num))\n"
+  <> "  case list.try_map(values, decode_"
   <> qualified_fn_name
-  <> "_value(value)\n"
-  <> "    |> result.map_error(fn(err) { decode.DecodeError(expected: \""
+  <> "_value) {\n"
+  <> "    Ok(values) -> decode.success(values)\n"
+  <> "    Error(err) -> decode.fail(\""
   <> string.lowercase(qualified_fn_name)
-  <> "\", found: err, path: []) })\n"
-  <> "  })\n"
+  <> "\", err, [])\n"
+  <> "  }\n"
   <> "}"
 }
 
@@ -709,7 +741,7 @@ fn flatten_nested_messages_simple(
   parent_name: String,
 ) -> List(Message) {
   list.fold(nested_messages, [], fn(acc, nested_msg) {
-    let flattened_name = parent_name <> nested_msg.name
+    let flattened_name = parent_name <> "." <> nested_msg.name
 
     // Create the flattened message
     let flattened_msg = proto.Message(..nested_msg, name: flattened_name)
@@ -749,12 +781,14 @@ fn collect_nested_enums_flattened(
 ) -> List(proto.Enum) {
   let current_enums =
     enums
-    |> list.map(fn(enum) { proto.Enum(..enum, name: parent_name <> enum.name) })
+    |> list.map(fn(enum) {
+      proto.Enum(..enum, name: parent_name <> "." <> enum.name)
+    })
 
   let deeper_enums =
     nested_messages
     |> list.fold([], fn(acc, nested_msg) {
-      let nested_name = parent_name <> nested_msg.name
+      let nested_name = parent_name <> "." <> nested_msg.name
       list.append(
         acc,
         collect_nested_enums_flattened(

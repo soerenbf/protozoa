@@ -124,7 +124,12 @@ fn add_message(
           type_sources: dict.insert(registry.type_sources, fqn, file_path),
         )
 
-      // Add nested messages recursively
+      use registry_with_main <- result.try(add_nested_enums(
+        registry_with_main,
+        message.nested_enums,
+        fqn,
+        file_path,
+      ))
       add_nested_messages(
         registry_with_main,
         message.nested_messages,
@@ -159,7 +164,12 @@ fn add_nested_messages(
                   file_path,
                 ),
               )
-            // Recursively add nested messages of nested messages
+            use updated_reg <- result.try(add_nested_enums(
+              updated_reg,
+              nested_msg.nested_enums,
+              nested_fqn,
+              file_path,
+            ))
             add_nested_messages(
               updated_reg,
               nested_msg.nested_messages,
@@ -170,6 +180,17 @@ fn add_nested_messages(
         }
       }
     }
+  })
+}
+
+fn add_nested_enums(
+  registry: TypeRegistry,
+  enums: List(proto.Enum),
+  scope: String,
+  file_path: String,
+) -> Result(TypeRegistry, Error) {
+  list.try_fold(enums, registry, fn(reg, enum) {
+    add_enum(reg, enum, scope, file_path)
   })
 }
 
@@ -221,88 +242,38 @@ pub fn resolve_type_reference(
   type_name: String,
   current_package: String,
 ) -> Result(String, String) {
-  // Try various resolution strategies
-  let candidates = [
-    // 1. Exact match (already fully qualified)
-    type_name,
-    // 2. In current package
-    make_fully_qualified_name(current_package, type_name),
-    // 3. Nested type in current package (e.g., Message.NestedMessage)
-    ..resolve_nested_type_candidates(type_name, current_package, registry),
-  ]
-
+  let candidates = case string.starts_with(type_name, ".") {
+    True -> [string.drop_start(type_name, 1)]
+    False -> scoped_candidates(type_name, current_package)
+  }
   case
     list.find(candidates, fn(candidate) {
-      case lookup_type(registry, candidate) {
-        option.Some(_) -> True
-        option.None -> False
-      }
+      lookup_type(registry, candidate) != option.None
     })
   {
-    Ok(resolved) -> Ok(resolved)
-    Error(_) -> {
-      // 4. Try searching for nested types in the registry
-      // This handles cases like "Inner" when the full name is "package.Outer.Inner"
-      case find_nested_type_in_registry(registry, type_name, current_package) {
-        option.Some(fqn) -> Ok(fqn)
-        option.None ->
-          Error(
-            "Unknown type: "
-            <> type_name
-            <> " (searched in package: "
-            <> current_package
-            <> ")",
-          )
-      }
-    }
+    Ok(fqn) -> Ok(fqn)
+    Error(_) ->
+      Error(
+        "Unknown type: " <> type_name <> " (scope: " <> current_package <> ")",
+      )
   }
 }
 
-fn resolve_nested_type_candidates(
-  type_name: String,
-  current_package: String,
-  _registry: TypeRegistry,
-) -> List(String) {
-  case string.contains(type_name, ".") {
-    False -> []
-    True -> {
-      // For nested types like "OuterMessage.InnerMessage"
-      // Try with current package prefix
-      [make_fully_qualified_name(current_package, type_name)]
-    }
-  }
-}
-
-/// Search the registry for a nested type by its simple name
-/// This handles cases where we have type name "Inner" but the registry has "package.Outer.Inner"
-fn find_nested_type_in_registry(
-  registry: TypeRegistry,
-  type_name: String,
-  current_package: String,
-) -> option.Option(String) {
-  // Search for a FQN that ends with ".{type_name}" in the current package
-  let suffix = "." <> type_name
-  let package_prefix = case current_package {
-    "" -> ""
-    pkg -> pkg <> "."
-  }
-
-  // Search messages first
-  let message_match =
-    dict.keys(registry.messages)
-    |> list.find(fn(fqn) {
-      string.ends_with(fqn, suffix) && string.starts_with(fqn, package_prefix)
-    })
-
-  case message_match {
-    Ok(fqn) -> option.Some(fqn)
-    Error(_) -> {
-      // Search enums
-      dict.keys(registry.enums)
-      |> list.find(fn(fqn) {
-        string.ends_with(fqn, suffix) && string.starts_with(fqn, package_prefix)
-      })
-      |> option.from_result()
+fn scoped_candidates(name: String, scope: String) -> List(String) {
+  case scope {
+    "" -> [name]
+    _ -> {
+      let parent =
+        scope
+        |> string.split(".")
+        |> list.reverse
+        |> list.drop(1)
+        |> list.reverse
+        |> string.join(".")
+      [
+        make_fully_qualified_name(scope, name),
+        ..scoped_candidates(name, parent)
+      ]
     }
   }
 }
@@ -407,13 +378,13 @@ pub fn resolve_field_type(
             Error(_) -> proto.MessageType(fqn)
           }
         }
-        Error(_) -> field_type
+        Error(error) -> panic as error
       }
     }
     proto.EnumType(name) -> {
       case resolve_type_reference(registry, name, current_package) {
         Ok(fqn) -> proto.EnumType(fqn)
-        Error(_) -> field_type
+        Error(error) -> panic as error
       }
     }
     proto.Repeated(inner) ->

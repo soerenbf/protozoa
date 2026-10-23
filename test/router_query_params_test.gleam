@@ -76,11 +76,18 @@ message ListResponse {
   // Parse it
   let assert Ok(proto_file) = file.parse(proto_content)
 
+  let assert Ok(registry) =
+    type_registry.add_file(
+      type_registry.new(),
+      "test_http_service.proto",
+      proto_file,
+    )
+
   // Generate code using the new pure API
   let assert Ok(generated) =
     codegen.generate(
       files: [file.Path(path: "test_http_service.proto", content: proto_file)],
-      registry: type_registry.new(),
+      registry: registry,
     )
 
   generated

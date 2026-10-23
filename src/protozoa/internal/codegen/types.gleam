@@ -3,8 +3,10 @@
 //// This module handles generating Gleam type definitions from Protocol Buffer messages.
 //// It creates record types, enum types, and oneof types with proper nesting support.
 
+import gleam/dict
 import gleam/list
 import gleam/option
+import gleam/result
 import gleam/set
 import gleam/string
 import justin
@@ -15,16 +17,28 @@ import protozoa/parser/proto.{
 
 /// Codegen context - bundles registry, file path, and pre-computed package
 pub type Context {
-  Context(registry: TypeRegistry, file_path: String, package: String)
+  Context(
+    registry: TypeRegistry,
+    file_path: String,
+    package: String,
+    enum_names: dict.Dict(#(String, String), String),
+  )
 }
 
-/// Create a new codegen context
+/// Create a context from `registry` and its source `file_path`, including the
+/// module-wide enum naming policy. Unknown paths use an empty package; never
+/// fails. Example: `new_ctx(registry, "messages.proto")`.
 pub fn new_ctx(registry: TypeRegistry, file_path: String) -> Context {
   let package = case type_registry.get_file_package(registry, file_path) {
     option.Some(pkg) -> pkg
     option.None -> ""
   }
-  Context(registry: registry, file_path: file_path, package: package)
+  Context(
+    registry: registry,
+    file_path: file_path,
+    package: package,
+    enum_names: enum_names(registry),
+  )
 }
 
 // Reserved Gleam keywords that need to be escaped when used as field names
@@ -61,6 +75,84 @@ pub fn escape_keyword(name: String) -> String {
   case list.contains(gleam_keywords, name) {
     True -> name <> "_"
     False -> name
+  }
+}
+
+/// Map a protobuf field name to a Gleam label. `name` is the original label.
+/// Never fails. Example: `field_name("specificationHash") == "specification_hash"`.
+pub fn field_name(name: String) -> String {
+  escape_keyword(justin.snake_case(name))
+}
+
+/// Prefix a variant with its generated owning type. Arguments are the rendered
+/// owner and protobuf variant. Never fails. Example: `constructor("State", "v0")` is `"StateV0"`.
+pub fn constructor(owner: String, variant: String) -> String {
+  owner <> capitalize_first(variant)
+}
+
+/// Render an enum variant using the module-wide collision policy.
+/// `owner` is the rendered type, `variant` the proto name, and `ctx` the registry
+/// context. Never fails. Example: a unique `enum_constructor("State", "ZERO", ctx)`
+/// returns `"ZERO"`; a colliding one returns `"StateZERO"`.
+pub fn enum_constructor(
+  owner: String,
+  variant: String,
+  ctx: Context,
+) -> String {
+  dict.get(ctx.enum_names, #(owner, variant))
+  |> result.unwrap(capitalize_first(variant))
+}
+
+fn enum_names(registry: TypeRegistry) -> dict.Dict(#(String, String), String) {
+  let variants =
+    registry.enums
+    |> dict.to_list
+    |> list.flat_map(fn(entry) {
+      let #(name, enum) = entry
+      list.map(enum.values, fn(value) { #(flatten_type_name(name), value.name) })
+    })
+  let reserved =
+    registry.messages
+    |> dict.to_list
+    |> list.flat_map(fn(entry) {
+      let #(name, message) = entry
+      let owner = flatten_type_name(name)
+      [
+        owner,
+        ..list.flat_map(message.oneofs, fn(oneof) {
+          list.map(oneof.fields, fn(field) {
+            constructor(owner <> capitalize_first(oneof.name), field.name)
+          })
+        })
+      ]
+    })
+  qualify_collisions(variants, reserved, set.new())
+}
+
+// Qualification can itself collide with another bare variant; reach a fixed point.
+fn qualify_collisions(
+  variants: List(#(String, String)),
+  reserved: List(String),
+  qualified: set.Set(#(String, String)),
+) -> dict.Dict(#(String, String), String) {
+  let names =
+    list.map(variants, fn(key) {
+      #(key, case set.contains(qualified, key) {
+        True -> constructor(key.0, key.1)
+        False -> capitalize_first(key.1)
+      })
+    })
+  let all_names = list.append(reserved, list.map(names, fn(entry) { entry.1 }))
+  let next =
+    list.fold(names, qualified, fn(acc, entry) {
+      case list.count(all_names, fn(name) { name == entry.1 }) > 1 {
+        True -> set.insert(acc, entry.0)
+        False -> acc
+      }
+    })
+  case set.size(next) == set.size(qualified) {
+    True -> dict.from_list(names)
+    False -> qualify_collisions(variants, reserved, next)
   }
 }
 
@@ -127,7 +219,9 @@ pub fn generate_enum_type(enum: Enum, ctx: Context) -> String {
   let type_name = qualified_type(enum.name, ctx)
   let variants =
     enum.values
-    |> list.map(fn(variant) { "  " <> capitalize_first(variant.name) })
+    |> list.map(fn(variant) {
+      "  " <> enum_constructor(type_name, variant.name, ctx)
+    })
     |> string.join("\n")
 
   "pub type " <> type_name <> " {\n" <> variants <> "\n}"
@@ -142,7 +236,7 @@ fn generate_message_type(message: Message, ctx: Context) -> String {
     message.fields
     |> list.map(fn(field) {
       let gleam_type = resolve_field_type(field, ctx, message)
-      let escaped_name = escape_keyword(field.name)
+      let escaped_name = field_name(field.name)
       let deprecation_comment = case has_deprecated_option(field.options) {
         True -> " // @deprecated"
         False -> ""
@@ -154,7 +248,7 @@ fn generate_message_type(message: Message, ctx: Context) -> String {
     message.oneofs
     |> list.map(fn(oneof) {
       let oneof_type_name = type_name <> capitalize_first(oneof.name)
-      let escaped_name = escape_keyword(oneof.name)
+      let escaped_name = field_name(oneof.name)
       "    " <> escaped_name <> ": option.Option(" <> oneof_type_name <> ")"
     })
 
@@ -206,23 +300,15 @@ fn generate_oneof_type(
   let variants =
     oneof.fields
     |> list.map(fn(field) {
-      let base_variant_name = capitalize_first(field.name)
-      // Qualify the field type if it's a nested type
-      let qualified =
-        qualify_nested_field_type(
-          field.field_type,
+      let scope =
+        type_registry.make_fully_qualified_name(
+          ctx.package,
           parent_message.name,
-          parent_message,
         )
-      let gleam_type = resolve_type(qualified, ctx)
-      // Avoid naming conflicts with well-known types
-      let variant_name = case base_variant_name, gleam_type {
-        "Empty", "Empty" -> "EmptyData"
-        "StringValue", "String" -> "StringValueVariant"
-        "BoolValue", "Bool" -> "BoolValueVariant"
-        "ListValue", "ListValue" -> "ListValueVariant"
-        name, _ -> name
-      }
+      let resolved =
+        type_registry.resolve_field_type(ctx.registry, field.field_type, scope)
+      let gleam_type = resolve_type(resolved, ctx)
+      let variant_name = constructor(type_name, field.name)
       "  " <> variant_name <> "(" <> gleam_type <> ")"
     })
     |> string.join("\n")
@@ -243,38 +329,7 @@ fn has_deprecated_option(options: List(FieldOption)) -> Bool {
 }
 
 fn flatten_nested_message(nested_msg: Message, parent: Message) -> Message {
-  // The prefix for nested types should include both parent and current message names
-  let full_prefix = parent.name <> nested_msg.name
-
-  let fixed_fields =
-    nested_msg.fields
-    |> list.map(fn(field) {
-      let updated_field_type =
-        qualify_nested_field_type(field.field_type, full_prefix, nested_msg)
-      proto.Field(..field, field_type: updated_field_type)
-    })
-
-  // Also fix oneofs to use qualified nested type names
-  let fixed_oneofs =
-    nested_msg.oneofs
-    |> list.map(fn(oneof) {
-      let fixed_oneof_fields =
-        oneof.fields
-        |> list.map(fn(field) {
-          let updated_field_type =
-            qualify_nested_field_type(field.field_type, full_prefix, nested_msg)
-          proto.Field(..field, field_type: updated_field_type)
-        })
-      proto.Oneof(..oneof, fields: fixed_oneof_fields)
-    })
-
-  proto.Message(
-    name: parent.name <> nested_msg.name,
-    fields: fixed_fields,
-    oneofs: fixed_oneofs,
-    nested_messages: nested_msg.nested_messages,
-    nested_enums: nested_msg.nested_enums,
-  )
+  proto.Message(..nested_msg, name: parent.name <> "." <> nested_msg.name)
 }
 
 fn generate_nested_enum_types(
@@ -285,7 +340,7 @@ fn generate_nested_enum_types(
   message.nested_enums
   |> list.fold(#([], seen_enums), fn(acc, nested_enum) {
     let #(existing_enum_types, current_enums) = acc
-    let flattened_name = message.name <> nested_enum.name
+    let flattened_name = message.name <> "." <> nested_enum.name
 
     case set.contains(current_enums, flattened_name) {
       True -> acc
@@ -305,25 +360,14 @@ fn resolve_field_type(
   ctx: Context,
   parent_message: Message,
 ) -> String {
-  // Get the qualified parent name (including package prefix)
-  let qualified_parent_name = qualified_type(parent_message.name, ctx)
-
-  // First, qualify the field type if it references a nested type
-  let qualified =
-    qualify_nested_type(field.field_type, qualified_parent_name, parent_message)
-
-  case qualified {
-    proto.Repeated(inner) -> {
-      let qualified_inner =
-        qualify_nested_type(inner, qualified_parent_name, parent_message)
-      "List(" <> resolve_type(qualified_inner, ctx) <> ")"
-    }
-    proto.Optional(inner) -> {
-      let qualified_inner =
-        qualify_nested_type(inner, qualified_parent_name, parent_message)
-      "option.Option(" <> resolve_type(qualified_inner, ctx) <> ")"
-    }
-    _ -> resolve_type(qualified, ctx)
+  let scope =
+    type_registry.make_fully_qualified_name(ctx.package, parent_message.name)
+  let resolved =
+    type_registry.resolve_field_type(ctx.registry, field.field_type, scope)
+  case resolved {
+    proto.MessageType(_) ->
+      "option.Option(" <> resolve_type(resolved, ctx) <> ")"
+    _ -> resolve_type(resolved, ctx)
   }
 }
 
@@ -357,63 +401,6 @@ pub fn resolve_type(proto_type: Type, ctx: Context) -> String {
   }
 }
 
-fn qualify_nested_field_type(
-  proto_type: Type,
-  parent_name: String,
-  parent_message: Message,
-) -> Type {
-  case proto_type {
-    proto.MessageType(name) -> {
-      case is_nested_type_in_message(name, parent_message) {
-        True -> proto.MessageType(parent_name <> name)
-        False -> proto_type
-      }
-    }
-    proto.EnumType(name) -> {
-      case is_nested_enum_in_message(name, parent_message) {
-        True -> proto.EnumType(parent_name <> name)
-        False -> proto_type
-      }
-    }
-    _ -> proto_type
-  }
-}
-
-/// Qualify nested field type with already-qualified parent name
-/// Used when we need the full package-prefixed name for the nested type
-fn qualify_nested_type(
-  proto_type: Type,
-  qualified_parent_name: String,
-  parent_message: Message,
-) -> Type {
-  case proto_type {
-    proto.MessageType(name) -> {
-      case is_nested_type_in_message(name, parent_message) {
-        // Use the already-qualified parent name directly
-        True -> proto.MessageType(qualified_parent_name <> name)
-        False -> proto_type
-      }
-    }
-    proto.EnumType(name) -> {
-      case is_nested_enum_in_message(name, parent_message) {
-        True -> proto.EnumType(qualified_parent_name <> name)
-        False -> proto_type
-      }
-    }
-    _ -> proto_type
-  }
-}
-
-fn is_nested_type_in_message(type_name: String, parent_message: Message) -> Bool {
-  parent_message.nested_messages
-  |> list.any(fn(nested) { nested.name == type_name })
-}
-
-fn is_nested_enum_in_message(enum_name: String, parent_message: Message) -> Bool {
-  parent_message.nested_enums
-  |> list.any(fn(nested_enum) { nested_enum.name == enum_name })
-}
-
 fn resolve_external_type(name: String, ctx: Context) -> String {
   // Try to resolve the type through the registry
   case type_registry.resolve_type_reference(ctx.registry, name, ctx.package) {
@@ -421,10 +408,7 @@ fn resolve_external_type(name: String, ctx: Context) -> String {
       // All types are merged into a single Gleam module, so just flatten the name
       flatten_type_name(resolved_fqn)
     }
-    Error(_) -> {
-      // Fallback for types not in registry
-      flatten_type_name(name)
-    }
+    Error(error) -> panic as error
   }
 }
 

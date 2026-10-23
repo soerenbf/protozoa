@@ -78,12 +78,15 @@ pub type ProtoValue {
   ProtoLengthDelimited(BitArray)
 }
 
-/// A decoder is a function that takes a dict of fields and produces a value.
-/// This type allows for composable, type-safe decoding of Protocol Buffer messages.
-/// Fields are stored in a Dict for O(1) lookup performance.
-/// Returns either the decoded value or a list of all errors encountered.
+// Keep cross-number wire order separately from the indexed field lookup.
+type Context {
+  Context(ordered: List(Field), indexed: Dict(Int, List(Field)))
+}
+
+/// Composable message decoder with ordered fields and indexed lookup internally.
+/// Returns a decoded value or explicit decode errors; construct using combinators.
 pub opaque type Decoder(a) {
-  Decoder(fn(Dict(Int, List(Field))) -> Result(a, List(DecodeError)))
+  Decoder(fn(Context) -> Result(a, List(DecodeError)))
 }
 
 /// Run a decoder on a BitArray containing Protocol Buffer data.
@@ -105,7 +108,60 @@ pub fn run(
   )
   let field_dict = build_field_dict(fields)
   let Decoder(f) = decoder
-  f(field_dict)
+  f(Context(fields, field_dict))
+}
+
+/// Normalize decoded map `entries`, retaining only the last value for each key.
+/// Cannot fail. Example: `map_entries([#(1, "old"), #(1, "new")])` returns
+/// `[#(1, "new")]`. Entry order is not part of protobuf map semantics.
+pub fn map_entries(entries: List(#(k, v))) -> List(#(k, v)) {
+  list.fold(entries, [], fn(unique: List(#(k, v)), entry) {
+    [entry, ..list.filter(unique, fn(previous) { previous.0 != entry.0 })]
+  })
+}
+
+/// Decode a oneof in wire order. Alternatives contain the field number, expected
+/// wire type, message-merge flag and payload decoder. Wrong wire types are unknown
+/// fields; malformed recognized payloads return errors, never absence.
+/// Example: `oneof([#(1, wire.Varint, False, int32_field)])`.
+pub fn oneof(
+  alternatives: List(
+    #(Int, WireType, Bool, fn(Field) -> Result(a, DecodeError)),
+  ),
+) -> Decoder(option.Option(a)) {
+  Decoder(fn(context) {
+    use selected <- result.try(
+      list.try_fold(
+        context.ordered,
+        None,
+        fn(selected: option.Option(#(Field, a)), field) {
+          case
+            list.find(alternatives, fn(alt) {
+              alt.0 == field.number && alt.1 == field.wire_type
+            })
+          {
+            Error(_) -> Ok(selected)
+            Ok(#(_, _, merge, decode)) -> {
+              let combined = case selected, merge {
+                Some(#(previous, _)), True if previous.number == field.number ->
+                  Field(..field, data: <<previous.data:bits, field.data:bits>>)
+                _, _ -> field
+              }
+              // Validate even an occurrence subsequently overwritten by another case.
+              use _ <- result.try(
+                decode(field) |> result.map_error(fn(err) { [err] }),
+              )
+              use value <- result.try(
+                decode(combined) |> result.map_error(fn(err) { [err] }),
+              )
+              Ok(Some(#(combined, value)))
+            }
+          }
+        },
+      ),
+    )
+    Ok(option.map(selected, fn(pair) { pair.1 }))
+  })
 }
 
 /// Create a decoder that always succeeds with a value.
@@ -134,7 +190,7 @@ pub fn success(value: a) -> Decoder(a) {
 pub fn from_field_dict(
   f: fn(Dict(Int, List(Field))) -> Result(a, List(DecodeError)),
 ) -> Decoder(a) {
-  Decoder(f)
+  Decoder(fn(context) { f(context.indexed) })
 }
 
 /// Create a decoder that always fails with an error message.
@@ -163,10 +219,12 @@ pub fn field(
   decoder: fn(Field) -> Result(a, DecodeError),
 ) -> Decoder(a) {
   Decoder(fn(fields) {
-    case dict.get(fields, number) {
-      Ok([field, ..]) ->
+    case dict.get(fields.indexed, number) {
+      Ok([first, ..rest]) -> {
+        let field = list.fold(rest, first, fn(_, next) { next })
         decoder(field)
         |> result.map_error(fn(err) { [err] })
+      }
       Ok([]) -> Error([FieldNotFound(number)])
       Error(_) -> Error([FieldNotFound(number)])
     }
@@ -175,7 +233,7 @@ pub fn field(
 
 /// Decode an optional field.
 /// Returns Ok(Ok(value)) if the field is present and valid,
-/// Ok(Error(Nil)) if the field is missing or invalid.
+/// Ok(Error(Nil)) if the field is missing. Present invalid values return errors.
 /// 
 /// ## Examples
 /// 
@@ -187,12 +245,10 @@ pub fn optional_field(
   decoder: fn(Field) -> Result(a, DecodeError),
 ) -> Decoder(Result(a, Nil)) {
   Decoder(fn(fields) {
-    case dict.get(fields, number) {
-      Ok([field, ..]) -> {
-        case decoder(field) {
-          Ok(value) -> Ok(Ok(value))
-          Error(_) -> Ok(Error(Nil))
-        }
+    case dict.get(fields.indexed, number) {
+      Ok([first, ..rest]) -> {
+        let field = list.fold(rest, first, fn(_, next) { next })
+        decoder(field) |> result.map(Ok) |> result.map_error(fn(err) { [err] })
       }
       Ok([]) -> Ok(Error(Nil))
       Error(_) -> Ok(Error(Nil))
@@ -214,12 +270,10 @@ pub fn field_with_default(
   default: a,
 ) -> Decoder(a) {
   Decoder(fn(fields) {
-    case dict.get(fields, number) {
-      Ok([field, ..]) -> {
-        case decoder(field) {
-          Ok(value) -> Ok(value)
-          Error(_) -> Ok(default)
-        }
+    case dict.get(fields.indexed, number) {
+      Ok([first, ..rest]) -> {
+        let field = list.fold(rest, first, fn(_, next) { next })
+        decoder(field) |> result.map_error(fn(err) { [err] })
       }
       Ok([]) -> Ok(default)
       Error(_) -> Ok(default)
@@ -241,7 +295,7 @@ pub fn repeated_field(
   decoder: fn(Field) -> Result(a, DecodeError),
 ) -> Decoder(List(a)) {
   Decoder(fn(fields) {
-    case dict.get(fields, number) {
+    case dict.get(fields.indexed, number) {
       Ok(field_list) -> {
         let results = list.map(field_list, decoder)
         let errors =
@@ -478,7 +532,7 @@ pub fn message_field(
   )
   let field_dict = build_field_dict(inner_fields)
   let Decoder(f) = decoder
-  case f(field_dict) {
+  case f(Context(inner_fields, field_dict)) {
     Ok(value) -> Ok(value)
     Error([first_error, ..]) -> Error(first_error)
     Error([]) ->
@@ -582,9 +636,33 @@ pub fn sfixed64(number: Int) -> Decoder(Int) {
   field(number, sfixed64_field)
 }
 
-/// Decoder for repeated int32 fields.
+/// Decode repeated int32 field `number`, accepting packed, unpacked, or mixed
+/// occurrences in wire order. Malformed packed varints return decode errors.
+///
+/// ```gleam
+/// run(<<8, 1, 10, 2, 2, 3>>, repeated_int32(1)) // Ok([1, 2, 3])
+/// ```
 pub fn repeated_int32(number: Int) -> Decoder(List(Int)) {
-  repeated_field(number, varint_field)
+  repeated_field(number, fn(field) {
+    case field.wire_type {
+      wire.LengthDelimited -> decode_packed_int32(field.data, [])
+      _ -> result.map(varint_field(field), fn(value) { [value] })
+    }
+  })
+  |> map(list.flatten)
+}
+
+fn decode_packed_int32(
+  data: BitArray,
+  reversed: List(Int),
+) -> Result(List(Int), DecodeError) {
+  case data {
+    <<>> -> Ok(list.reverse(reversed))
+    _ -> {
+      use #(value, rest) <- result.try(decode_varint_raw(data))
+      decode_packed_int32(rest, [value, ..reversed])
+    }
+  }
 }
 
 /// Decoder for repeated string fields.
@@ -597,12 +675,49 @@ pub fn nested_message(number: Int, decoder: Decoder(a)) -> Decoder(a) {
   field(number, fn(f) { message_field(f, decoder) })
 }
 
-/// Decoder for optional nested message fields.
+/// Decode optional nested message `number` with `decoder`, merging occurrences.
+/// Missing fields return `Ok(Error(Nil))`; malformed present messages return errors.
+/// Example: `optional_nested_message(1, user_decoder())`.
 pub fn optional_nested_message(
   number: Int,
   decoder: Decoder(a),
 ) -> Decoder(Result(a, Nil)) {
-  optional_field(number, fn(f) { message_field(f, decoder) })
+  Decoder(fn(context) {
+    case dict.get(context.indexed, number) {
+      Error(_) | Ok([]) -> Ok(Error(Nil))
+      Ok(fields) -> {
+        use chunks <- result.try(
+          list.try_map(fields, fn(field) {
+            use bytes <- result.try(
+              bytes_field(field) |> result.map_error(fn(err) { [err] }),
+            )
+            // Each embedded occurrence must be framed correctly on its own.
+            use _ <- result.try(
+              decode_message(bytes) |> result.map_error(fn(err) { [err] }),
+            )
+            Ok(bytes)
+          }),
+        )
+        let bytes = bit_array.concat(chunks)
+        run(bytes, decoder) |> result.map(Ok)
+      }
+    }
+  })
+}
+
+/// Decode a map-entry message value, supplying an empty message when omitted.
+/// `number` is the value tag and `decoder` its message decoder. Malformed data
+/// returns errors. Example: `nested_message_with_default(2, item_decoder())`.
+pub fn nested_message_with_default(
+  number: Int,
+  decoder: Decoder(a),
+) -> Decoder(a) {
+  then(optional_nested_message(number, decoder), fn(value) {
+    case value {
+      Ok(value) -> success(value)
+      Error(_) -> from_field_dict(fn(_) { run(<<>>, decoder) })
+    }
+  })
 }
 
 // Builder pattern combinators - removed as they don't work well with Gleam's type system

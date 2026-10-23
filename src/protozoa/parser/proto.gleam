@@ -77,6 +77,7 @@ type MessageItem {
   ItemOneof(Oneof)
   ItemNestedMessage(Message)
   ItemNestedEnum(Enum)
+  ItemReserved
 }
 
 pub type FieldOption {
@@ -127,10 +128,13 @@ pub fn syntax() -> nibble.Parser(String, token.ProtoToken, Nil) {
 
 /// Parse an optional package declaration
 pub fn package() -> nibble.Parser(Option(String), token.ProtoToken, Nil) {
-  combinator.optional(package_inner())
+  combinator.optional(package_declaration())
 }
 
-fn package_inner() -> nibble.Parser(String, token.ProtoToken, Nil) {
+/// Parse a required package declaration from the token stream (no arguments).
+/// Fails on missing or malformed declarations.
+/// Example: `nibble.run(tokens, package_declaration())`.
+pub fn package_declaration() -> nibble.Parser(String, token.ProtoToken, Nil) {
   use _ <- nibble.do(nibble.token(token.PackageKw))
   use name <- nibble.do(combinator.qualified_identifier())
   use _ <- nibble.do(nibble.token(token.Semicolon))
@@ -159,12 +163,12 @@ fn rpc_method() -> nibble.Parser(Method, token.ProtoToken, Nil) {
   use name <- nibble.do(combinator.identifier())
   use _ <- nibble.do(nibble.token(token.LParen))
   use client_streaming <- nibble.do(combinator.optional_token(token.StreamKw))
-  use input_type <- nibble.do(combinator.identifier())
+  use input_type <- nibble.do(type_reference())
   use _ <- nibble.do(nibble.token(token.RParen))
   use _ <- nibble.do(nibble.token(token.ReturnsKw))
   use _ <- nibble.do(nibble.token(token.LParen))
   use server_streaming <- nibble.do(combinator.optional_token(token.StreamKw))
-  use output_type <- nibble.do(combinator.identifier())
+  use output_type <- nibble.do(type_reference())
   use _ <- nibble.do(nibble.token(token.RParen))
   use http_info <- nibble.do(
     nibble.one_of([
@@ -219,7 +223,7 @@ fn parse_rpc_option() -> nibble.Parser(
   use _ <- nibble.do(nibble.token(token.OptionKw))
   use _ <- nibble.do(nibble.token(token.LParen))
   // Parse option name (e.g., google.api.http)
-  use option_name <- nibble.do(combinator.qualified_identifier())
+  use option_name <- nibble.do(type_reference())
   use _ <- nibble.do(nibble.token(token.RParen))
   use _ <- nibble.do(nibble.token(token.Equals))
 
@@ -326,7 +330,10 @@ pub fn imports() -> nibble.Parser(List(Import), token.ProtoToken, Nil) {
   combinator.many(import_statement())
 }
 
-fn import_statement() -> nibble.Parser(Import, token.ProtoToken, Nil) {
+/// Parse one import from the token stream (no arguments), retaining its modifiers.
+/// Fails on a missing path or semicolon.
+/// Example: `nibble.run(tokens, import_statement())`.
+pub fn import_statement() -> nibble.Parser(Import, token.ProtoToken, Nil) {
   use _ <- nibble.do(nibble.token(token.ImportKw))
   use public <- nibble.do(combinator.optional_token(token.PublicKw))
   use weak <- nibble.do(combinator.optional_token(token.WeakKw))
@@ -389,8 +396,17 @@ fn scalar_type() -> nibble.Parser(Type, token.ProtoToken, Nil) {
   ])
 }
 
-fn message_type() -> nibble.Parser(Type, token.ProtoToken, Nil) {
+fn type_reference() -> nibble.Parser(String, token.ProtoToken, Nil) {
+  use absolute <- nibble.do(combinator.optional_token(token.Dot))
   use name <- nibble.do(combinator.qualified_identifier())
+  nibble.return(case absolute {
+    option.Some(_) -> "." <> name
+    option.None -> name
+  })
+}
+
+fn message_type() -> nibble.Parser(Type, token.ProtoToken, Nil) {
+  use name <- nibble.do(type_reference())
   nibble.return(MessageType(name))
 }
 
@@ -448,6 +464,7 @@ pub fn message() -> nibble.Parser(Message, token.ProtoToken, Nil) {
 
 fn message_item() -> nibble.Parser(MessageItem, token.ProtoToken, Nil) {
   nibble.one_of([
+    reserved_declaration() |> nibble.replace(ItemReserved),
     oneof() |> nibble.map(ItemOneof),
     field() |> nibble.map(ItemField),
     message() |> nibble.map(ItemNestedMessage),
@@ -483,6 +500,8 @@ fn partition_helper(
       partition_helper(rest, fields, oneofs, [m, ..messages], enums)
     [ItemNestedEnum(e), ..rest] ->
       partition_helper(rest, fields, oneofs, messages, [e, ..enums])
+    [ItemReserved, ..rest] ->
+      partition_helper(rest, fields, oneofs, messages, enums)
   }
 }
 
@@ -587,4 +606,49 @@ fn field_modifier() -> nibble.Parser(FieldModifier, token.ProtoToken, Nil) {
     nibble.token(token.RepeatedKw) |> nibble.replace(ModRepeated),
     nibble.token(token.OptionalKw) |> nibble.replace(ModOptional),
   ])
+}
+
+/// Parse a scalar-valued file option from the token stream (no arguments).
+/// The codec AST does not retain language-generation options. Unsupported values
+/// or missing delimiters fail instead of consuming following declarations.
+/// Example: `nibble.run(tokens, file_option())`.
+pub fn file_option() -> nibble.Parser(Nil, token.ProtoToken, Nil) {
+  use _ <- nibble.do(nibble.token(token.OptionKw))
+  use _ <- nibble.do(combinator.qualified_identifier())
+  use _ <- nibble.do(nibble.token(token.Equals))
+  use _ <- nibble.do(
+    nibble.one_of([
+      combinator.string_literal() |> nibble.replace(Nil),
+      combinator.integer() |> nibble.replace(Nil),
+      combinator.qualified_identifier() |> nibble.replace(Nil),
+    ]),
+  )
+  nibble.token(token.Semicolon)
+}
+
+fn reserved_declaration() -> nibble.Parser(Nil, token.ProtoToken, Nil) {
+  use _ <- nibble.do(nibble.token(token.Identifier("reserved")))
+  use _ <- nibble.do(
+    nibble.one_of([
+      combinator.sep1(combinator.string_literal(), nibble.token(token.Comma))
+        |> nibble.replace(Nil),
+      combinator.sep1(reserved_range(), nibble.token(token.Comma))
+        |> nibble.replace(Nil),
+    ]),
+  )
+  nibble.token(token.Semicolon)
+}
+
+fn reserved_range() -> nibble.Parser(Nil, token.ProtoToken, Nil) {
+  use _ <- nibble.do(combinator.integer())
+  use _ <- nibble.do(
+    combinator.optional({
+      use _ <- nibble.do(nibble.token(token.Identifier("to")))
+      nibble.one_of([
+        combinator.integer() |> nibble.replace(Nil),
+        nibble.token(token.Identifier("max")),
+      ])
+    }),
+  )
+  nibble.return(Nil)
 }

@@ -6,10 +6,12 @@
 //// This module is purely functional and does not perform file I/O. It takes parsed ProtoFiles
 //// and returns generated code as strings.
 
+import gleam/dict
 import gleam/list
 import gleam/option
 import gleam/result
 import gleam/string
+import justin
 import protozoa/internal/codegen/decoders
 import protozoa/internal/codegen/encoders
 import protozoa/internal/codegen/router
@@ -20,11 +22,22 @@ import protozoa/parser/file.{type Path, type ProtoFile}
 import protozoa/parser/proto
 
 /// Generate code for multiple proto files combined into a single output.
-/// Returns the generated code as a string.
+/// `files` supplies parsed sources and `registry` supplies their registered types.
+/// Returns generated source, or a diagnostic for unresolved field references or
+/// normalized-name collisions. No output is written on error.
+///
+/// Example: `generate(files: [file.Path("item.proto", parsed)], registry: registry)`.
 pub fn generate(
   files files: List(Path),
   registry registry: TypeRegistry,
 ) -> Result(String, String) {
+  use _ <- result.try(validate_symbols(registry))
+  use _ <- result.try(
+    list.try_each(files, fn(entry) {
+      let package = option.unwrap(entry.content.package, "")
+      validate_messages(entry.content.messages, package, registry)
+    }),
+  )
   // Split files into user files and well-known files
   let user_files =
     list.filter(files, fn(file) { !is_well_known_proto_file(file.path) })
@@ -210,7 +223,9 @@ fn determine_needed_imports(proto_file: ProtoFile) -> List(String) {
 
   // Add list import if we have repeated fields or field masks
   let needs_list =
-    has_repeated_fields(proto_file) || has_field_mask_reference(proto_file)
+    has_repeated_fields(proto_file)
+    || has_field_mask_reference(proto_file)
+    || has_enums(proto_file)
   let imports = case needs_list {
     True -> ["import gleam/list", ..base_imports]
     False -> base_imports
@@ -224,15 +239,9 @@ fn determine_needed_imports(proto_file: ProtoFile) -> List(String) {
     False -> imports
   }
 
-  // Add dict import if we have oneofs (for oneof decoders)
-  let needs_dict = has_oneofs(proto_file)
-  let imports = case needs_dict {
-    True -> ["import gleam/dict", ..imports]
-    False -> imports
-  }
-
   // Add result import if we have enum decoders
-  let needs_result = has_enums(proto_file) || has_enum_fields(proto_file)
+  let needs_result =
+    has_enums(proto_file) || has_enum_fields(proto_file) || has_oneof
   let imports = case needs_result {
     True -> ["import gleam/result", ..imports]
     False -> imports
@@ -254,7 +263,7 @@ fn determine_needed_imports(proto_file: ProtoFile) -> List(String) {
 
   // Add wire import if we have messages with bytes fields or message fields
   let needs_wire =
-    has_bytes_fields(proto_file) || has_message_fields(proto_file)
+    has_bytes_fields(proto_file) || has_message_fields(proto_file) || has_oneof
   let imports = case needs_wire {
     True -> ["import protozoa/wire", ..imports]
     False -> imports
@@ -318,7 +327,7 @@ fn has_optional_fields(proto_file: ProtoFile) -> Bool {
     msg.fields
     |> list.any(fn(field) {
       case field.field_type {
-        proto.Optional(_) -> True
+        proto.Optional(_) | proto.MessageType(_) -> True
         _ -> False
       }
     })
@@ -1204,4 +1213,114 @@ fn generate_mixin_definition() -> String {
     "}",
   ]
   string.join(lines, "\n")
+}
+
+// Validate at the Result-returning boundary before infallible render helpers run.
+fn validate_symbols(registry: TypeRegistry) -> Result(Nil, String) {
+  let messages = dict.to_list(registry.messages)
+  let enums = dict.to_list(registry.enums)
+  let oneofs =
+    list.flat_map(messages, fn(entry) {
+      let #(name, message) = entry
+      list.map(message.oneofs, fn(o) {
+        #(types.flatten_type_name(name) <> types.capitalize_first(o.name), o)
+      })
+    })
+  let names =
+    list.append(
+      list.map(
+        list.append(dict.keys(registry.messages), dict.keys(registry.enums)),
+        types.flatten_type_name,
+      ),
+      list.map(oneofs, fn(entry) { entry.0 }),
+    )
+  use _ <- result.try(unique_names(names))
+  use _ <- result.try(unique_names(list.map(names, justin.snake_case)))
+  let ctx = types.new_ctx(registry, "")
+  let constructors =
+    list.append(
+      list.map(messages, fn(entry) { types.flatten_type_name(entry.0) }),
+      list.append(
+        list.flat_map(enums, fn(entry) {
+          let #(name, enum) = entry
+          list.map(enum.values, fn(value) {
+            types.enum_constructor(
+              types.flatten_type_name(name),
+              value.name,
+              ctx,
+            )
+          })
+        }),
+        list.flat_map(oneofs, fn(entry) {
+          let #(owner, oneof) = entry
+          list.map(oneof.fields, fn(field) {
+            types.constructor(owner, field.name)
+          })
+        }),
+      ),
+    )
+  unique_names(constructors)
+}
+
+fn unique_names(names: List(String)) -> Result(Nil, String) {
+  use _ <- result.try(
+    list.try_fold(names, [], fn(seen, name) {
+      case list.contains(seen, name) {
+        True -> Error("Generated name collision: " <> name)
+        False -> Ok([name, ..seen])
+      }
+    }),
+  )
+  Ok(Nil)
+}
+
+fn validate_messages(
+  messages: List(proto.Message),
+  scope: String,
+  registry: TypeRegistry,
+) -> Result(Nil, String) {
+  list.try_each(messages, fn(message) {
+    let scope = type_registry.make_fully_qualified_name(scope, message.name)
+    let fields =
+      list.append(
+        message.fields,
+        list.flat_map(message.oneofs, fn(o) { o.fields }),
+      )
+    use _ <- result.try(
+      unique_names(list.append(
+        list.map(message.fields, fn(f) { types.field_name(f.name) }),
+        list.map(message.oneofs, fn(o) { types.field_name(o.name) }),
+      )),
+    )
+    use _ <- result.try(
+      list.try_each(fields, fn(field) {
+        validate_field_type(field.field_type, scope, registry)
+      }),
+    )
+    validate_messages(message.nested_messages, scope, registry)
+  })
+}
+
+fn validate_field_type(
+  field_type: proto.Type,
+  scope: String,
+  registry: TypeRegistry,
+) -> Result(Nil, String) {
+  case field_type {
+    proto.MessageType(name) | proto.EnumType(name) -> {
+      use _ <- result.try(type_registry.resolve_type_reference(
+        registry,
+        name,
+        scope,
+      ))
+      Ok(Nil)
+    }
+    proto.Optional(inner) | proto.Repeated(inner) ->
+      validate_field_type(inner, scope, registry)
+    proto.Map(key, value) -> {
+      use _ <- result.try(validate_field_type(key, scope, registry))
+      validate_field_type(value, scope, registry)
+    }
+    _ -> Ok(Nil)
+  }
 }

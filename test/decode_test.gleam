@@ -522,9 +522,8 @@ pub fn optional_field_with_invalid_data_test() {
   let string_encoded = encode.string_field(1, "hello")
   let optional_int_decoder = decode.optional_field(1, decode.varint_field)
 
-  // Should return Ok(Error(Nil)) for invalid data in optional field
-  let assert Ok(Error(Nil)) =
-    decode.run(string_encoded, with: optional_int_decoder)
+  // Present malformed values must not silently become absence.
+  let assert Error(_) = decode.run(string_encoded, with: optional_int_decoder)
 }
 
 pub fn field_with_default_invalid_data_test() {
@@ -533,8 +532,9 @@ pub fn field_with_default_invalid_data_test() {
   let int_with_default_decoder =
     decode.field_with_default(1, decode.varint_field, 42)
 
-  // Should return default value when field has invalid data
-  let assert Ok(42) = decode.run(string_encoded, with: int_with_default_decoder)
+  // Defaults apply to missing fields, not malformed present payloads.
+  let assert Error(_) =
+    decode.run(string_encoded, with: int_with_default_decoder)
 }
 
 pub fn map_decoder_transforms_result_test() {
@@ -603,4 +603,46 @@ pub fn unsupported_wire_type_in_decode_field_test() {
   let assert Error([
     decode.DecodeError("supported wire type", "unsupported wire type", []),
   ]) = decode.run(unsupported_wire_type_data, with: decoder)
+}
+
+pub fn repeated_int32_packed_wire_test() {
+  let assert Ok([1, 128, 2, 3]) =
+    decode.run(
+      <<8, 1, 10, 3, 128, 1, 2, 8, 3, 10, 0>>,
+      decode.repeated_int32(1),
+    )
+  let assert Error(_) = decode.run(<<10, 1, 128>>, decode.repeated_int32(1))
+  let assert Error(_) = decode.run(<<13, 0, 0, 0, 0>>, decode.repeated_int32(1))
+}
+
+/// Nested optional occurrences merge while absent and empty retain presence.
+/// No arguments; asserts on mismatches. Example: `gleam test`.
+pub fn optional_message_presence_and_merge_test() {
+  let decoder =
+    decode.optional_nested_message(1, decode.int32_with_default(1, 0))
+  let assert Ok(Error(Nil)) = decode.run(<<>>, decoder)
+  let assert Ok(Ok(0)) = decode.run(<<10, 0>>, decoder)
+  let assert Ok(Ok(7)) = decode.run(<<10, 2, 8, 7, 10, 0>>, decoder)
+  let assert Error(_) = decode.run(<<10, 1, 128>>, decoder)
+  let assert Error(_) = decode.run(<<10, 2, 8, 128, 10, 1, 1>>, decoder)
+  // Public dictionary callbacks still receive only real fields, including inside
+  // the merged nested message context, with per-number occurrence order intact.
+  let indexed =
+    decode.from_field_dict(fn(fields) {
+      dict.get(fields, 1)
+      |> result.map(list.length)
+      |> result.map_error(fn(_) { [] })
+    })
+  let assert Ok(Ok(2)) =
+    decode.run(
+      <<10, 2, 8, 7, 10, 2, 8, 9>>,
+      decode.optional_nested_message(1, indexed),
+    )
+}
+
+/// Map normalization retains the last value per key, not duplicate entries.
+/// No arguments; asserts on mismatches. Example: `gleam test`.
+pub fn map_entry_last_value_test() {
+  let assert [#(7, "new")] = decode.map_entries([#(7, "old"), #(7, "new")])
+  let assert [] = decode.map_entries([])
 }
