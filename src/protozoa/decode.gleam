@@ -113,11 +113,18 @@ pub fn run(
 
 /// Normalize decoded map `entries`, retaining only the last value for each key.
 /// Cannot fail. Example: `map_entries([#(1, "old"), #(1, "new")])` returns
-/// `[#(1, "new")]`. Entry order is not part of protobuf map semantics.
+/// `[#(1, "new")]`. Entries retain reverse final-occurrence order, though
+/// protobuf itself does not specify map order.
 pub fn map_entries(entries: List(#(k, v))) -> List(#(k, v)) {
-  list.fold(entries, [], fn(unique: List(#(k, v)), entry) {
-    [entry, ..list.filter(unique, fn(previous) { previous.0 != entry.0 })]
-  })
+  let #(_, unique) =
+    list.fold(list.reverse(entries), #(dict.new(), []), fn(acc, entry) {
+      let #(seen, unique) = acc
+      case dict.has_key(seen, entry.0) {
+        True -> acc
+        False -> #(dict.insert(seen, entry.0, Nil), [entry, ..unique])
+      }
+    })
+  list.reverse(unique)
 }
 
 /// Decode a oneof in wire order. Alternatives contain the field number, expected
@@ -419,16 +426,28 @@ pub fn bool_field(field: Field) -> Result(Bool, DecodeError) {
   Ok(value != 0)
 }
 
-/// Decodes a varint field as an int32.
+/// Decodes `field` as signed int32, using the low 32 wire bits.
+/// Returns a DecodeError for invalid data or wire type.
+/// Example: `int32_field(Field(1, wire.Varint, <<0:32, 4_294_967_295:32>>))` returns `Ok(-1)`.
 @internal
 pub fn int32_field(field: Field) -> Result(Int, DecodeError) {
-  varint_field(field)
+  case field {
+    Field(_, wire.Varint, <<_:32, value:32-signed>>) -> Ok(value)
+    _ -> varint_field(field)
+  }
 }
 
-/// Decodes a varint field as an int64.
+/// Decodes `field` as signed int64 without an unsigned Int intermediate.
+/// Returns a DecodeError for invalid data or wire type.
+/// Example: `int64_field(Field(1, wire.Varint, <<-1:64>>))` returns `Ok(-1)`.
+/// JavaScript application values are limited to ±(2^53−1).
 @internal
 pub fn int64_field(field: Field) -> Result(Int, DecodeError) {
-  varint_field(field)
+  case field {
+    Field(_, wire.Varint, <<high:32-signed, low:32>>) ->
+      Ok(high * 4_294_967_296 + low)
+    _ -> varint_field(field)
+  }
 }
 
 /// Decodes a varint field as a uint32.
@@ -544,21 +563,24 @@ pub fn message_field(
 
 /// Decoder for int32 fields.
 pub fn int32(number: Int) -> Decoder(Int) {
-  field(number, varint_field)
+  field(number, int32_field)
 }
 
 /// Decoder for int32 fields with a default value.
 pub fn int32_with_default(number: Int, default: Int) -> Decoder(Int) {
-  field_with_default(number, varint_field, default)
+  field_with_default(number, int32_field, default)
 }
 
+/// Decodes signed int64 field `number`, returning `default` when absent.
+/// Malformed present fields return errors when run.
+/// Example: `run(<<>>, int64_with_default(1, -1))` returns `Ok(-1)`.
 pub fn int64_with_default(number: Int, default: Int) -> Decoder(Int) {
-  field_with_default(number, varint_field, default)
+  field_with_default(number, int64_field, default)
 }
 
 /// Decoder for int64 fields.
 pub fn int64(number: Int) -> Decoder(Int) {
-  field(number, varint_field)
+  field(number, int64_field)
 }
 
 /// Decoder for uint32 fields.
@@ -646,7 +668,7 @@ pub fn repeated_int32(number: Int) -> Decoder(List(Int)) {
   repeated_field(number, fn(field) {
     case field.wire_type {
       wire.LengthDelimited -> decode_packed_int32(field.data, [])
-      _ -> result.map(varint_field(field), fn(value) { [value] })
+      _ -> result.map(int32_field(field), fn(value) { [value] })
     }
   })
   |> map(list.flatten)
@@ -659,8 +681,14 @@ fn decode_packed_int32(
   case data {
     <<>> -> Ok(list.reverse(reversed))
     _ -> {
-      use #(value, rest) <- result.try(decode_varint_raw(data))
-      decode_packed_int32(rest, [value, ..reversed])
+      case decode_varint_raw(data) {
+        Error(error) -> Error(error)
+        Ok(#(value, rest)) ->
+          case int32_field(Field(0, wire.Varint, value)) {
+            Error(error) -> Error(error)
+            Ok(signed) -> decode_packed_int32(rest, [signed, ..reversed])
+          }
+      }
     }
   }
 }
@@ -772,17 +800,18 @@ fn decode_message(data: BitArray) -> Result(List(Field), DecodeError) {
   decode_fields(data, [])
 }
 
-/// Build a dictionary from a list of fields for O(1) lookup performance.
+/// Build an index without copying growing per-number prefixes.
 /// Fields with the same number are grouped together in a list.
 fn build_field_dict(fields: List(Field)) -> Dict(Int, List(Field)) {
   list.fold(fields, dict.new(), fn(acc, field) {
     dict.upsert(acc, field.number, fn(existing) {
       case existing {
-        Some(fields) -> list.append(fields, [field])
+        Some(fields) -> [field, ..fields]
         None -> [field]
       }
     })
   })
+  |> dict.map_values(fn(_, occurrences) { list.reverse(occurrences) })
 }
 
 fn decode_fields(
@@ -792,17 +821,27 @@ fn decode_fields(
   case data {
     <<>> -> Ok(list.reverse(acc))
     _ -> {
-      use #(field, rest) <- result.try(decode_field(data))
-      decode_fields(rest, [field, ..acc])
+      case decode_field(data) {
+        Ok(#(field, rest)) -> decode_fields(rest, [field, ..acc])
+        Error(error) -> Error(error)
+      }
     }
   }
 }
 
 fn decode_field(data: BitArray) -> Result(#(Field, BitArray), DecodeError) {
   use #(tag, rest1) <- result.try(decode_varint_raw(data))
-  let field_number = wire.get_field_number(tag)
+  let assert <<tag_high:32, tag_low:32>> = tag
+  use _ <- result.try(case tag_high == 0 && tag_low >= 8 {
+    True -> Ok(Nil)
+    False ->
+      Error(
+        DecodeError("field number 1..536870911", "invalid field number", []),
+      )
+  })
+  let field_number = tag_low / 8
   use wire_type <- result.try(
-    wire.get_wire_type(tag)
+    wire.get_wire_type(tag_low)
     |> result.map_error(fn(_) {
       DecodeError("valid wire type", "invalid wire type", [])
     }),
@@ -812,7 +851,7 @@ fn decode_field(data: BitArray) -> Result(#(Field, BitArray), DecodeError) {
     wire.Varint -> {
       use #(value, rest2) <- result.try(decode_varint_raw(rest1))
       // Store varint as 64-bit integer in BitArray
-      Ok(#(Field(field_number, wire_type, <<value:64>>), rest2))
+      Ok(#(Field(field_number, wire_type, value), rest2))
     }
     wire.Fixed64 -> {
       use #(value, rest2) <- result.try(decode_fixed64_raw(rest1))
@@ -830,30 +869,46 @@ fn decode_field(data: BitArray) -> Result(#(Field, BitArray), DecodeError) {
   }
 }
 
-fn decode_varint_raw(data: BitArray) -> Result(#(Int, BitArray), DecodeError) {
-  decode_varint_helper(data, 0, 0)
+fn decode_varint_raw(
+  data: BitArray,
+) -> Result(#(BitArray, BitArray), DecodeError) {
+  decode_varint_helper(data, 0, 0, 0, 1)
 }
 
+// Two bounded 32-bit chunks preserve safe final signed values on JavaScript.
 fn decode_varint_helper(
   data: BitArray,
-  value: Int,
-  shift: Int,
-) -> Result(#(Int, BitArray), DecodeError) {
+  low: Int,
+  high: Int,
+  index: Int,
+  factor: Int,
+) -> Result(#(BitArray, BitArray), DecodeError) {
   case data {
-    <<>> -> Error(DecodeError("more varint data", "unexpected end of data", []))
-    <<byte:int, rest:bits>> -> {
-      let new_value =
-        value
-        |> int.bitwise_or(
-          int.bitwise_and(byte, 0x7F)
-          |> int.bitwise_shift_left(shift),
-        )
-      case int.bitwise_and(byte, 0x80) {
-        0 -> Ok(#(new_value, rest))
-        _ -> decode_varint_helper(rest, new_value, shift + 7)
+    <<byte, rest:bits>> -> {
+      case index == 9 && byte > 1 {
+        True ->
+          Error(
+            DecodeError("64-bit varint", "overflow or over-width varint", []),
+          )
+        False -> {
+          let payload = byte % 128
+          let #(low, high) = case index {
+            n if n < 4 -> #(low + payload * factor, high)
+            4 -> #(low + payload % 16 * factor, high + payload / 16)
+            _ -> #(low, high + payload * factor)
+          }
+          case byte < 128 {
+            True -> Ok(#(<<high:32, low:32>>, rest))
+            False ->
+              decode_varint_helper(rest, low, high, index + 1, case index {
+                4 -> 8
+                _ -> factor * 128
+              })
+          }
+        }
       }
     }
-    _ -> Error(DecodeError("valid varint data", "invalid varint data", []))
+    _ -> Error(DecodeError("more varint data", "unexpected end of data", []))
   }
 }
 
@@ -878,7 +933,8 @@ fn decode_fixed64_raw(
 fn decode_length_delimited_raw(
   data: BitArray,
 ) -> Result(#(BitArray, BitArray), DecodeError) {
-  use #(length, rest) <- result.try(decode_varint_raw(data))
+  use #(length_bits, rest) <- result.try(decode_varint_raw(data))
+  let assert <<length:64>> = length_bits
   case bit_array.byte_size(rest) >= length {
     True -> {
       let bytes_to_take = length * 8
@@ -918,8 +974,8 @@ fn decode_length_delimited_raw(
 /// ```
 pub fn decode_zigzag(value: Int) -> Int {
   case int.bitwise_and(value, 1) {
-    0 -> int.bitwise_shift_right(value, 1)
-    _ -> -int.bitwise_shift_right(value + 1, 1)
+    0 -> value / 2
+    _ -> -{ value / 2 } - 1
   }
 }
 
@@ -931,14 +987,7 @@ pub fn decode_zigzag(value: Int) -> Int {
 /// sint32(1) // Decodes field 1 as a zigzag-encoded int32
 /// ```
 pub fn sint32(number: Int) -> Decoder(Int) {
-  Decoder(fn(fields) {
-    let Decoder(f) =
-      field(number, fn(f) {
-        use value <- result.try(varint_field(f))
-        Ok(decode_zigzag(value))
-      })
-    f(fields)
-  })
+  field(number, sint32_field)
 }
 
 /// Decoder for sint64 fields (signed 64-bit integers with zigzag encoding).
@@ -949,12 +998,114 @@ pub fn sint32(number: Int) -> Decoder(Int) {
 /// sint64(1) // Decodes field 1 as a zigzag-encoded int64
 /// ```
 pub fn sint64(number: Int) -> Decoder(Int) {
-  Decoder(fn(fields) {
-    let Decoder(f) =
-      field(number, fn(f) {
-        use value <- result.try(varint_field(f))
-        Ok(decode_zigzag(value))
-      })
-    f(fields)
+  field(number, sint64_field)
+}
+
+/// Decode zigzag integer `field`; wrong wire types return a DecodeError.
+/// Example: `field(1, sint32_field)` reads an explicitly present sint32.
+pub fn sint32_field(field: Field) -> Result(Int, DecodeError) {
+  case field {
+    Field(_, wire.Varint, <<_:32, value:32>>) -> Ok(decode_zigzag(value))
+    _ -> varint_field(field)
+  }
+}
+
+/// Decode zigzag integer `field`; wrong wire types return a DecodeError.
+/// Example: `field(1, sint64_field)` reads an explicitly present sint64.
+pub fn sint64_field(field: Field) -> Result(Int, DecodeError) {
+  case field {
+    Field(_, wire.Varint, <<high:32, low:32>>) -> {
+      // Shift bounded chunks before constructing the final application integer.
+      let half = high * 2_147_483_648 + low / 2
+      case low % 2 {
+        0 -> Ok(half)
+        _ -> Ok(-half - 1)
+      }
+    }
+    _ -> varint_field(field)
+  }
+}
+
+/// Decode repeated varint field `number` using scalar `decoder`, accepting
+/// packed/unpacked/mixed occurrences in wire order. Invalid varints and scalar
+/// values return DecodeError records.
+/// Example: `run(<<8, 1, 10, 1, 2>>, repeated_varint(1, int64_field))`
+/// returns `Ok([1, 2])`.
+pub fn repeated_varint(
+  number: Int,
+  decoder: fn(Field) -> Result(a, DecodeError),
+) -> Decoder(List(a)) {
+  repeated_scalar(number, wire.Varint, decoder)
+}
+
+/// Decode repeated 32-bit field `number` using scalar `decoder`, accepting
+/// packed/unpacked/mixed occurrences in wire order. Invalid lengths and scalar
+/// values return DecodeError records.
+/// Example: `run(<<>>, repeated_fixed32(1, float_field))` returns `Ok([])`.
+pub fn repeated_fixed32(
+  number: Int,
+  decoder: fn(Field) -> Result(a, DecodeError),
+) -> Decoder(List(a)) {
+  repeated_scalar(number, wire.Fixed32, decoder)
+}
+
+/// Decode repeated 64-bit field `number` using scalar `decoder`, accepting
+/// packed/unpacked/mixed occurrences in wire order. Invalid lengths and scalar
+/// values return DecodeError records.
+/// Example: `run(<<>>, repeated_fixed64(1, double_field))` returns `Ok([])`.
+pub fn repeated_fixed64(
+  number: Int,
+  decoder: fn(Field) -> Result(a, DecodeError),
+) -> Decoder(List(a)) {
+  repeated_scalar(number, wire.Fixed64, decoder)
+}
+
+fn repeated_scalar(
+  number: Int,
+  wire_type: wire.WireType,
+  decoder: fn(Field) -> Result(a, DecodeError),
+) -> Decoder(List(a)) {
+  repeated_field(number, fn(field) {
+    case field.wire_type {
+      wire.LengthDelimited ->
+        decode_packed_scalar(field.data, wire_type, decoder, [])
+      _ -> result.map(decoder(field), fn(value) { [value] })
+    }
   })
+  |> map(list.flatten)
+}
+
+fn decode_packed_scalar(
+  data: BitArray,
+  wire_type: wire.WireType,
+  decoder: fn(Field) -> Result(a, DecodeError),
+  reversed: List(a),
+) -> Result(List(a), DecodeError) {
+  case data {
+    <<>> -> Ok(list.reverse(reversed))
+    _ -> {
+      let parsed = case wire_type {
+        wire.Varint -> decode_varint_raw(data)
+        wire.Fixed32 -> decode_fixed32_raw(data)
+        wire.Fixed64 -> decode_fixed64_raw(data)
+        _ ->
+          Error(
+            DecodeError(
+              "packable scalar wire type",
+              "unsupported wire type",
+              [],
+            ),
+          )
+      }
+      case parsed {
+        Error(error) -> Error(error)
+        Ok(#(raw, rest)) ->
+          case decoder(Field(0, wire_type, raw)) {
+            Error(error) -> Error(error)
+            Ok(value) ->
+              decode_packed_scalar(rest, wire_type, decoder, [value, ..reversed])
+          }
+      }
+    }
+  }
 }

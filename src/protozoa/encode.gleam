@@ -55,6 +55,9 @@ import protozoa/wire.{type WireType}
 
 /// Encodes an integer as a varint (variable-length integer).
 /// Varints are used for int32, int64, uint32, uint64, bool, and enum fields.
+/// `value` must fit the declared protobuf integer domain; negative signed
+/// values use ten-byte two's-complement encoding. This function returns no errors.
+/// JavaScript application values must be within ±(2^53−1).
 /// 
 /// ## Examples
 /// 
@@ -64,7 +67,10 @@ import protozoa/wire.{type WireType}
 /// varint(128) // <<128, 1>>
 /// ```
 pub fn varint(value: Int) -> BitArray {
-  do_varint(value, <<>>)
+  case value < 0 {
+    True -> negative_varint(-1 - value, 9, <<>>)
+    False -> do_varint(value, <<>>)
+  }
 }
 
 fn do_varint(value: Int, acc: BitArray) -> BitArray {
@@ -72,9 +78,21 @@ fn do_varint(value: Int, acc: BitArray) -> BitArray {
     v if v < 128 -> bit_array.concat([acc, <<v:int>>])
     v -> {
       let byte = int.bitwise_or(int.bitwise_and(v, 0x7F), 0x80)
-      let next_value = int.bitwise_shift_right(v, 7)
+      let next_value = v / 128
       do_varint(next_value, bit_array.concat([acc, <<byte:int>>]))
     }
+  }
+}
+
+// Complement bounded base-128 digits, never constructing an unsigned 64-bit Int.
+fn negative_varint(complement: Int, remaining: Int, acc: BitArray) -> BitArray {
+  case remaining {
+    0 -> <<acc:bits, 1>>
+    _ ->
+      negative_varint(complement / 128, remaining - 1, <<
+        acc:bits,
+        { 255 - complement % 128 },
+      >>)
   }
 }
 
@@ -196,14 +214,29 @@ pub fn zigzag(value: Int) -> Int {
   }
 }
 
+// Emit the low digit before doubling, so odd zigzag wire values never round
+// through an unsafe JavaScript Number intermediate.
+fn encode_zigzag(value: Int) -> BitArray {
+  let #(magnitude, sign) = case value < 0 {
+    True -> #(-value - 1, 1)
+    False -> #(value, 0)
+  }
+  let low = magnitude % 64 * 2 + sign
+  let rest = magnitude / 64
+  case rest {
+    0 -> <<low>>
+    _ -> <<{ low + 128 }, { varint(rest) }:bits>>
+  }
+}
+
 /// Encodes a sint32 field (signed int32 with zigzag encoding).
 pub fn sint32_field(field_number: Int, value: Int) -> BitArray {
-  field(field_number, wire.Varint, varint(zigzag(value)))
+  field(field_number, wire.Varint, encode_zigzag(value))
 }
 
 /// Encodes a sint64 field (signed int64 with zigzag encoding).
 pub fn sint64_field(field_number: Int, value: Int) -> BitArray {
-  field(field_number, wire.Varint, varint(zigzag(value)))
+  field(field_number, wire.Varint, encode_zigzag(value))
 }
 
 /// Combines multiple encoded fields into a complete Protocol Buffer message.
@@ -285,7 +318,10 @@ pub fn repeated_int64_field(field_number: Int, values: List(Int)) -> BitArray {
 
 /// Encodes a packed repeated float field.
 /// All values are encoded together and length-delimited.
-pub fn repeated_float_field(field_number: Int, values: List(Float)) -> BitArray {
+pub fn repeated_float_field(
+  field_number: Int,
+  values: List(Float),
+) -> BitArray {
   let encoded_values = list.map(values, fn(v) { float(v) })
   let concatenated = bit_array.concat(encoded_values)
   field(field_number, wire.LengthDelimited, length_delimited(concatenated))
@@ -293,7 +329,10 @@ pub fn repeated_float_field(field_number: Int, values: List(Float)) -> BitArray 
 
 /// Encodes a packed repeated double field.
 /// All values are encoded together and length-delimited.
-pub fn repeated_double_field(field_number: Int, values: List(Float)) -> BitArray {
+pub fn repeated_double_field(
+  field_number: Int,
+  values: List(Float),
+) -> BitArray {
   let encoded_values = list.map(values, fn(v) { double(v) })
   let concatenated = bit_array.concat(encoded_values)
   field(field_number, wire.LengthDelimited, length_delimited(concatenated))
@@ -317,8 +356,7 @@ pub fn repeated_bool_field(field_number: Int, values: List(Bool)) -> BitArray {
 /// Encodes a packed repeated sint32 field with zigzag encoding.
 /// All values are encoded together and length-delimited.
 pub fn repeated_sint32_field(field_number: Int, values: List(Int)) -> BitArray {
-  let zigzagged = list.map(values, fn(v) { zigzag(v) })
-  let encoded_values = list.map(zigzagged, fn(v) { varint(v) })
+  let encoded_values = list.map(values, encode_zigzag)
   let concatenated = bit_array.concat(encoded_values)
   field(field_number, wire.LengthDelimited, length_delimited(concatenated))
 }
@@ -326,8 +364,7 @@ pub fn repeated_sint32_field(field_number: Int, values: List(Int)) -> BitArray {
 /// Encodes a packed repeated sint64 field with zigzag encoding.
 /// All values are encoded together and length-delimited.
 pub fn repeated_sint64_field(field_number: Int, values: List(Int)) -> BitArray {
-  let zigzagged = list.map(values, fn(v) { zigzag(v) })
-  let encoded_values = list.map(zigzagged, fn(v) { varint(v) })
+  let encoded_values = list.map(values, encode_zigzag)
   let concatenated = bit_array.concat(encoded_values)
   field(field_number, wire.LengthDelimited, length_delimited(concatenated))
 }

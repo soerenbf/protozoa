@@ -184,12 +184,22 @@ fn generate_map_field_decoder(
     proto.Int64 -> "decode.int64_with_default(" <> field_num <> ", 0)"
     proto.UInt32 -> "decode.uint32_with_default(" <> field_num <> ", 0)"
     proto.UInt64 -> "decode.uint64_with_default(" <> field_num <> ", 0)"
-    proto.SInt32 -> "decode.sint32(" <> field_num <> ")"
-    proto.SInt64 -> "decode.sint64(" <> field_num <> ")"
-    proto.Fixed32 -> "decode.fixed32(" <> field_num <> ")"
-    proto.Fixed64 -> "decode.fixed64(" <> field_num <> ")"
-    proto.SFixed32 -> "decode.sfixed32(" <> field_num <> ")"
-    proto.SFixed64 -> "decode.sfixed64(" <> field_num <> ")"
+    proto.SInt32 ->
+      "decode.field_with_default(" <> field_num <> ", decode.sint32_field, 0)"
+    proto.SInt64 ->
+      "decode.field_with_default(" <> field_num <> ", decode.sint64_field, 0)"
+    proto.Fixed32 ->
+      "decode.field_with_default("
+      <> field_num
+      <> ", decode.fixed32_int_field, 0)"
+    proto.Fixed64 ->
+      "decode.field_with_default("
+      <> field_num
+      <> ", decode.fixed64_int_field, 0)"
+    proto.SFixed32 ->
+      "decode.field_with_default(" <> field_num <> ", decode.sfixed32_field, 0)"
+    proto.SFixed64 ->
+      "decode.field_with_default(" <> field_num <> ", decode.sfixed64_field, 0)"
     proto.Bool -> "decode.bool_with_default(" <> field_num <> ", False)"
     proto.Bytes ->
       "decode.field_with_default(" <> field_num <> ", decode.bytes_field, <<>>)"
@@ -298,22 +308,12 @@ fn oneof_checks(
 
 fn field_decoder_for_type(field_type: proto.Type, ctx: Context) -> String {
   case field_type {
-    proto.String -> "decode.string_field"
-    proto.Int32 -> "decode.int32_field"
-    proto.Bool -> "decode.bool_field"
-    proto.Bytes -> "decode.bytes_field"
-    proto.Float -> "decode.float_field"
-    proto.Double -> "decode.double_field"
     proto.MessageType(name) -> {
       let decoder_name = types.codec(name, "", "_decoder", ctx)
       "decode.message_field(_, " <> decoder_name <> "())"
     }
-    proto.EnumType(name) -> {
-      let decoder_name = types.codec(name, "decode_", "_from_field", ctx)
-      decoder_name
-    }
-    _ -> "decode.string_field"
-    // fallback
+    proto.EnumType(name) -> types.codec(name, "decode_", "_from_field", ctx)
+    _ -> field_decoder_name(field_type)
   }
 }
 
@@ -383,12 +383,22 @@ fn type_decoder(
     proto.Int64 -> "decode.int64_with_default(" <> field_num <> ", 0)"
     proto.UInt32 -> "decode.uint32_with_default(" <> field_num <> ", 0)"
     proto.UInt64 -> "decode.uint64_with_default(" <> field_num <> ", 0)"
-    proto.SInt32 -> "decode.sint32(" <> field_num <> ")"
-    proto.SInt64 -> "decode.sint64(" <> field_num <> ")"
-    proto.Fixed32 -> "decode.fixed32(" <> field_num <> ")"
-    proto.Fixed64 -> "decode.fixed64(" <> field_num <> ")"
-    proto.SFixed32 -> "decode.sfixed32(" <> field_num <> ")"
-    proto.SFixed64 -> "decode.sfixed64(" <> field_num <> ")"
+    proto.SInt32 ->
+      "decode.field_with_default(" <> field_num <> ", decode.sint32_field, 0)"
+    proto.SInt64 ->
+      "decode.field_with_default(" <> field_num <> ", decode.sint64_field, 0)"
+    proto.Fixed32 ->
+      "decode.field_with_default("
+      <> field_num
+      <> ", decode.fixed32_int_field, 0)"
+    proto.Fixed64 ->
+      "decode.field_with_default("
+      <> field_num
+      <> ", decode.fixed64_int_field, 0)"
+    proto.SFixed32 ->
+      "decode.field_with_default(" <> field_num <> ", decode.sfixed32_field, 0)"
+    proto.SFixed64 ->
+      "decode.field_with_default(" <> field_num <> ", decode.sfixed64_field, 0)"
     proto.Bool -> "decode.bool_with_default(" <> field_num <> ", False)"
     proto.Bytes ->
       "decode.field_with_default(" <> field_num <> ", decode.bytes_field, <<>>)"
@@ -446,6 +456,29 @@ fn repeated_decoder(
   case inner_type {
     proto.String -> "decode.repeated_string(" <> field_num <> ")"
     proto.Int32 -> "decode.repeated_int32(" <> field_num <> ")"
+    proto.Int64
+    | proto.UInt32
+    | proto.UInt64
+    | proto.SInt32
+    | proto.SInt64
+    | proto.Bool ->
+      "decode.repeated_varint("
+      <> field_num
+      <> ", "
+      <> field_decoder_name(inner_type)
+      <> ")"
+    proto.Fixed32 | proto.SFixed32 | proto.Float ->
+      "decode.repeated_fixed32("
+      <> field_num
+      <> ", "
+      <> field_decoder_name(inner_type)
+      <> ")"
+    proto.Fixed64 | proto.SFixed64 | proto.Double ->
+      "decode.repeated_fixed64("
+      <> field_num
+      <> ", "
+      <> field_decoder_name(inner_type)
+      <> ")"
     proto.EnumType(name) ->
       types.codec(name, "decode_repeated_", "", ctx) <> "(" <> field_num <> ")"
     _ ->
@@ -484,6 +517,12 @@ fn field_decoder_name(proto_type: Type) -> String {
     proto.Int64 -> "decode.int64_field"
     proto.UInt32 -> "decode.uint32_field"
     proto.UInt64 -> "decode.uint64_field"
+    proto.SInt32 -> "decode.sint32_field"
+    proto.SInt64 -> "decode.sint64_field"
+    proto.Fixed32 -> "decode.fixed32_int_field"
+    proto.Fixed64 -> "decode.fixed64_int_field"
+    proto.SFixed32 -> "decode.sfixed32_field"
+    proto.SFixed64 -> "decode.sfixed64_field"
     proto.Bool -> "decode.bool_field"
     proto.Bytes -> "decode.bytes_field"
     proto.Float -> "decode.float_field"
