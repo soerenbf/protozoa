@@ -1,3 +1,5 @@
+//// Generated names retain owner prefixes, normalization and collision safety.
+
 import gleam/string
 import protozoa/internal/codegen
 import protozoa/internal/type_registry
@@ -49,16 +51,17 @@ pub fn unrelated_suffix_does_not_resolve_test() {
   )
 }
 
-/// Bare unique names and qualified duplicates agree in types and codecs.
+/// Every variant uses its owning type in types and codecs.
 pub fn enum_constructor_collision_policy_test() {
   let output =
     generates(
       "enum Unique { ONLY = 0; } enum A { ZERO = 0; } enum B { ZERO = 0; }",
     )
-  let assert True = string.contains(output, "pub type Unique {\n  Only\n}")
-  let assert True = string.contains(output, "  Only -> 0")
-  let assert True = string.contains(output, "0 -> Ok(Only)")
-  let assert True = string.contains(output, "}, Only)")
+  let assert True =
+    string.contains(output, "pub type Unique {\n  UniqueOnly\n}")
+  let assert True = string.contains(output, "  UniqueOnly -> 0")
+  let assert True = string.contains(output, "0 -> Ok(UniqueOnly)")
+  let assert True = string.contains(output, "}, UniqueOnly)")
   let assert True = string.contains(output, "pub type A {\n  AZero\n}")
   let assert True = string.contains(output, "pub type B {\n  BZero\n}")
   let assert True = string.contains(output, "  AZero -> 0")
@@ -93,9 +96,9 @@ pub fn uppercase_snake_enum_test() {
     generates(
       "enum OpenStatus { OPEN_STATUS_OPEN_FOR_ALL = 0; alreadyMixed = 1; HTTPReady = 2; }",
     )
-  let assert True = string.contains(output, "  OpenStatusOpenForAll")
-  let assert True = string.contains(output, "  AlreadyMixed")
-  let assert True = string.contains(output, "  HTTPReady")
+  let assert True = string.contains(output, "  OpenStatusOpenStatusOpenForAll")
+  let assert True = string.contains(output, "  OpenStatusAlreadyMixed")
+  let assert True = string.contains(output, "  OpenStatusHTTPReady")
   rejects("enum A { FOO_BAR = 0; FooBar = 1; }", "Generated name collision")
 }
 

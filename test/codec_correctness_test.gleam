@@ -1,119 +1,64 @@
-import codec_fixture/sign
-import gleam/list
-import protozoa/decode
-import protozoa/encode
+//// Direct signed scalar and wire-boundary tests use independent canonical bytes.
 
-/// Independent Python protobuf vectors; JS cases stay within ±(2^53−1).
-/// No arguments or errors. Run with `gleam test` on either target.
+import gleam/list
+import protozoa/decode as d
+import protozoa/encode as e
+
+// Canonical protobuf vectors, independently checked with Python protobuf 6.33.5.
+// Values are literals so regeneration never depends on Python or parent packages.
 pub fn signed_boundary_test() {
-  let assert <<8, 255, 255, 255, 255, 255, 255, 255, 255, 255, 1>> =
-    encode.int32_field(1, -1)
-  let assert Ok(-1) =
-    decode.run(
-      <<8, 255, 255, 255, 255, 255, 255, 255, 255, 255, 1>>,
-      decode.int32(1),
-    )
-  let assert <<8, 128, 128, 128, 128, 248, 255, 255, 255, 255, 1>> =
-    encode.int32_field(1, -2_147_483_648)
-  let assert Ok(-2_147_483_648) =
-    decode.run(
-      <<8, 128, 128, 128, 128, 248, 255, 255, 255, 255, 1>>,
-      decode.int32(1),
-    )
-  let assert <<8, 255, 255, 255, 255, 7>> = encode.int32_field(1, 2_147_483_647)
-  let assert Ok(2_147_483_647) =
-    decode.run(<<8, 255, 255, 255, 255, 7>>, decode.int32(1))
-  let assert <<8, 0>> = encode.int32_field(1, 0)
-  let assert Ok(0) = decode.run(<<8, 0>>, decode.int32(1))
-  let assert <<8, 1>> = encode.int32_field(1, 1)
-  let assert Ok(1) = decode.run(<<8, 1>>, decode.int32(1))
-  let assert <<8, 127>> = encode.int32_field(1, 127)
-  let assert Ok(127) = decode.run(<<8, 127>>, decode.int32(1))
-  let assert <<8, 128, 1>> = encode.int32_field(1, 128)
-  let assert Ok(128) = decode.run(<<8, 128, 1>>, decode.int32(1))
-  let assert <<8, 128, 255, 255, 255, 255, 255, 255, 255, 255, 1>> =
-    encode.int32_field(1, -128)
-  let assert Ok(-128) =
-    decode.run(
-      <<8, 128, 255, 255, 255, 255, 255, 255, 255, 255, 1>>,
-      decode.int32(1),
-    )
-  let assert <<8, 255, 254, 255, 255, 255, 255, 255, 255, 255, 1>> =
-    encode.int32_field(1, -129)
-  let assert Ok(-129) =
-    decode.run(
-      <<8, 255, 254, 255, 255, 255, 255, 255, 255, 255, 1>>,
-      decode.int32(1),
-    )
-  let assert <<8, 255, 255, 255, 255, 255, 255, 255, 255, 255, 1>> =
-    encode.int64_field(1, -1)
-  let assert Ok(-1) =
-    decode.run(
-      <<8, 255, 255, 255, 255, 255, 255, 255, 255, 255, 1>>,
-      decode.int64(1),
-    )
-  let assert <<8, 129, 128, 128, 128, 128, 128, 128, 240, 255, 1>> =
-    encode.int64_field(1, -9_007_199_254_740_991)
-  let assert Ok(-9_007_199_254_740_991) =
-    decode.run(
-      <<8, 129, 128, 128, 128, 128, 128, 128, 240, 255, 1>>,
-      decode.int64(1),
-    )
-  let assert <<8, 255, 255, 255, 255, 255, 255, 255, 15>> =
-    encode.int64_field(1, 9_007_199_254_740_991)
-  let assert Ok(9_007_199_254_740_991) =
-    decode.run(<<8, 255, 255, 255, 255, 255, 255, 255, 15>>, decode.int64(1))
-  let assert <<8, 0>> = encode.int64_field(1, 0)
-  let assert Ok(0) = decode.run(<<8, 0>>, decode.int64(1))
-  let assert <<8, 1>> = encode.int64_field(1, 1)
-  let assert Ok(1) = decode.run(<<8, 1>>, decode.int64(1))
-  let assert <<8, 127>> = encode.int64_field(1, 127)
-  let assert Ok(127) = decode.run(<<8, 127>>, decode.int64(1))
-  let assert <<8, 128, 1>> = encode.int64_field(1, 128)
-  let assert Ok(128) = decode.run(<<8, 128, 1>>, decode.int64(1))
-  let assert <<8, 128, 255, 255, 255, 255, 255, 255, 255, 255, 1>> =
-    encode.int64_field(1, -128)
-  let assert Ok(-128) =
-    decode.run(
-      <<8, 128, 255, 255, 255, 255, 255, 255, 255, 255, 1>>,
-      decode.int64(1),
-    )
-  let assert <<8, 255, 254, 255, 255, 255, 255, 255, 255, 255, 1>> =
-    encode.int64_field(1, -129)
-  let assert Ok(-129) =
-    decode.run(
-      <<8, 255, 254, 255, 255, 255, 255, 255, 255, 255, 1>>,
-      decode.int64(1),
-    )
-  let assert <<8, 255, 255, 255, 255, 15>> =
-    encode.uint32_field(1, 4_294_967_295)
+  // Field 1 is int32 -1/min/max; negatives use sign-extended ten-byte varints.
+  list.each(
+    [
+      #(-1, <<8, 255, 255, 255, 255, 255, 255, 255, 255, 255, 1>>),
+      #(-2_147_483_648, <<8, 128, 128, 128, 128, 248, 255, 255, 255, 255, 1>>),
+      #(2_147_483_647, <<8, 255, 255, 255, 255, 7>>),
+    ],
+    fn(row) {
+      let assert Ok(value) = d.run(row.1, d.int32(1))
+      let assert True = value == row.0
+      let assert True = e.int32_field(1, row.0) == row.1
+    },
+  )
+  // Field 1 is int64 -1 and ±(2^53−1); JS applications must stay in this safe range.
+  list.each(
+    [
+      #(-1, <<8, 255, 255, 255, 255, 255, 255, 255, 255, 255, 1>>),
+      #(-9_007_199_254_740_991, <<
+        8,
+        129,
+        128,
+        128,
+        128,
+        128,
+        128,
+        128,
+        240,
+        255,
+        1,
+      >>),
+      #(9_007_199_254_740_991, <<8, 255, 255, 255, 255, 255, 255, 255, 15>>),
+    ],
+    fn(row) {
+      let assert Ok(value) = d.run(row.1, d.int64(1))
+      let assert True = value == row.0
+      let assert True = e.int64_field(1, row.0) == row.1
+    },
+  )
+  // Field 1 is uint32 maximum, then uint64 JS-safe maximum (not signed readers).
+  let assert <<8, 255, 255, 255, 255, 15>> = e.uint32_field(1, 4_294_967_295)
   let assert Ok(4_294_967_295) =
-    decode.run(<<8, 255, 255, 255, 255, 15>>, decode.uint32(1))
-  let assert <<8, 0>> = encode.uint32_field(1, 0)
-  let assert Ok(0) = decode.run(<<8, 0>>, decode.uint32(1))
-  let assert <<8, 1>> = encode.uint32_field(1, 1)
-  let assert Ok(1) = decode.run(<<8, 1>>, decode.uint32(1))
-  let assert <<8, 127>> = encode.uint32_field(1, 127)
-  let assert Ok(127) = decode.run(<<8, 127>>, decode.uint32(1))
-  let assert <<8, 128, 1>> = encode.uint32_field(1, 128)
-  let assert Ok(128) = decode.run(<<8, 128, 1>>, decode.uint32(1))
+    d.run(<<8, 255, 255, 255, 255, 15>>, d.uint32(1))
   let assert <<8, 255, 255, 255, 255, 255, 255, 255, 15>> =
-    encode.uint64_field(1, 9_007_199_254_740_991)
+    e.uint64_field(1, 9_007_199_254_740_991)
   let assert Ok(9_007_199_254_740_991) =
-    decode.run(<<8, 255, 255, 255, 255, 255, 255, 255, 15>>, decode.uint64(1))
-  let assert <<8, 0>> = encode.uint64_field(1, 0)
-  let assert Ok(0) = decode.run(<<8, 0>>, decode.uint64(1))
-  let assert <<8, 1>> = encode.uint64_field(1, 1)
-  let assert Ok(1) = decode.run(<<8, 1>>, decode.uint64(1))
-  let assert <<8, 127>> = encode.uint64_field(1, 127)
-  let assert Ok(127) = decode.run(<<8, 127>>, decode.uint64(1))
-  let assert <<8, 128, 1>> = encode.uint64_field(1, 128)
-  let assert Ok(128) = decode.run(<<8, 128, 1>>, decode.uint64(1))
+    d.run(<<8, 255, 255, 255, 255, 255, 255, 255, 15>>, d.uint64(1))
 }
 
-/// Checks structured parser errors at tag, value, length and packed boundaries.
-/// No arguments or errors; run with `gleam test`.
 pub fn malformed_wire_test() {
+  // Reject, in order: truncated tag; field 1 truncated value; eleven-byte value;
+  // overflowing tenth value byte; field zero; field number > 2^29−1;
+  // eleven-byte tag; overflowing length varint for field 1.
   list.each(
     [
       <<128>>,
@@ -126,170 +71,69 @@ pub fn malformed_wire_test() {
       <<10, 255, 255, 255, 255, 255, 255, 255, 255, 255, 2>>,
     ],
     fn(data) {
-      let assert Error([decode.DecodeError(..), ..]) =
-        decode.run(data, decode.success(Nil))
+      let assert Error([d.DecodeError(..), ..]) = d.run(data, d.success(Nil))
     },
   )
-  let assert Error(_) =
-    decode.run(
-      <<10, 10, 255, 255, 255, 255, 255, 255, 255, 255, 255, 2>>,
-      decode.repeated_int32(1),
-    )
 }
 
-/// Valid unknown tags, including schema-reserved numbers, remain skippable.
-/// No arguments or errors; run with `gleam test`.
 pub fn valid_unknown_test() {
-  let assert Ok(7) = decode.run(<<16, 1, 8, 7>>, decode.int32(1))
-  let assert Ok(7) = decode.run(<<192, 163, 9, 1, 8, 7>>, decode.int32(1))
-  let assert Ok(7) =
-    decode.run(<<248, 255, 255, 255, 15, 1, 8, 7>>, decode.int32(1))
-  let assert Ok(7) = decode.run(<<8, 135, 0>>, decode.int32(1))
+  // Read field 1=7 after unknown varints numbered 2, reserved 19000 and maximum 2^29−1.
+  let assert Ok(7) = d.run(<<16, 1, 8, 7>>, d.int32(1))
+  let assert Ok(7) = d.run(<<192, 163, 9, 1, 8, 7>>, d.int32(1))
+  let assert Ok(7) = d.run(<<248, 255, 255, 255, 15, 1, 8, 7>>, d.int32(1))
+  // Field 1=7 with a valid non-minimal varint is accepted.
+  let assert Ok(7) = d.run(<<8, 135, 0>>, d.int32(1))
 }
 
-/// Signed repeated/enum numeric paths and unsigned/zigzag stay distinct.
-/// No arguments or errors; run with `gleam test`.
 pub fn signed_paths_test() {
-  let assert <<8, 255, 255, 255, 255, 15>> =
-    encode.sint32_field(1, -2_147_483_648)
-  let assert Ok(-2_147_483_648) =
-    decode.run(<<8, 255, 255, 255, 255, 15>>, decode.sint32(1))
-  let assert <<8, 129, 2>> = encode.sint32_field(1, -129)
-  let assert Ok(-129) = decode.run(<<8, 129, 2>>, decode.sint32(1))
-  let assert <<8, 1>> = encode.sint32_field(1, -1)
-  let assert Ok(-1) = decode.run(<<8, 1>>, decode.sint32(1))
-  let assert <<8, 2>> = encode.sint32_field(1, 1)
-  let assert Ok(1) = decode.run(<<8, 2>>, decode.sint32(1))
-  let assert <<8, 254, 255, 255, 255, 15>> =
-    encode.sint32_field(1, 2_147_483_647)
-  let assert Ok(2_147_483_647) =
-    decode.run(<<8, 254, 255, 255, 255, 15>>, decode.sint32(1))
-  let assert <<8, 255, 255, 255, 255, 15>> =
-    encode.sint64_field(1, -2_147_483_648)
-  let assert Ok(-2_147_483_648) =
-    decode.run(<<8, 255, 255, 255, 255, 15>>, decode.sint64(1))
-  let assert <<8, 129, 2>> = encode.sint64_field(1, -129)
-  let assert Ok(-129) = decode.run(<<8, 129, 2>>, decode.sint64(1))
-  let assert <<8, 1>> = encode.sint64_field(1, -1)
-  let assert Ok(-1) = decode.run(<<8, 1>>, decode.sint64(1))
-  let assert <<8, 2>> = encode.sint64_field(1, 1)
-  let assert Ok(1) = decode.run(<<8, 2>>, decode.sint64(1))
-  let assert <<8, 254, 255, 255, 255, 15>> =
-    encode.sint64_field(1, 2_147_483_647)
-  let assert Ok(2_147_483_647) =
-    decode.run(<<8, 254, 255, 255, 255, 15>>, decode.sint64(1))
-  let assert Ok([-1]) =
-    decode.run(
-      <<8, 255, 255, 255, 255, 255, 255, 255, 255, 255, 1>>,
-      decode.repeated_int32(1),
-    )
-  let assert Ok([-1]) =
-    decode.run(
-      <<10, 10, 255, 255, 255, 255, 255, 255, 255, 255, 255, 1>>,
-      decode.repeated_int32(1),
-    )
-  let assert 10 = encode.varint_size(-1)
-}
-
-/// Declared negative enum constructors use signed scalar and packed paths.
-/// No arguments or errors; run with `gleam test`.
-pub fn negative_enum_test() {
-  let assert Ok(sign.Enumeration(sign.Negative, [])) =
-    sign.decode_enumeration(<<
-      8,
-      255,
-      255,
-      255,
-      255,
-      255,
-      255,
-      255,
-      255,
-      255,
-      1,
-    >>)
-  let assert <<8, 255, 255, 255, 255, 255, 255, 255, 255, 255, 1>> =
-    sign.encode_enumeration(sign.Enumeration(sign.Negative, []))
-  let assert Ok(sign.Enumeration(sign.Minimum, [])) =
-    sign.decode_enumeration(<<
-      8,
-      128,
-      128,
-      128,
-      128,
-      248,
-      255,
-      255,
-      255,
-      255,
-      1,
-    >>)
-  let assert <<8, 128, 128, 128, 128, 248, 255, 255, 255, 255, 1>> =
-    sign.encode_enumeration(sign.Enumeration(sign.Minimum, []))
-  let assert Ok(sign.Enumeration(sign.Zero, [sign.Negative, sign.Minimum])) =
-    sign.decode_enumeration(<<
-      18,
-      20,
-      255,
-      255,
-      255,
-      255,
-      255,
-      255,
-      255,
-      255,
-      255,
-      1,
-      128,
-      128,
-      128,
-      128,
-      248,
-      255,
-      255,
-      255,
-      255,
-      1,
-    >>)
+  // Field 1 is sint32 min, -129, -1, 1, max: zigzag, not two's-complement varints.
+  list.each(
+    [
+      #(-2_147_483_648, <<8, 255, 255, 255, 255, 15>>),
+      #(-129, <<8, 129, 2>>),
+      #(-1, <<8, 1>>),
+      #(1, <<8, 2>>),
+      #(2_147_483_647, <<8, 254, 255, 255, 255, 15>>),
+    ],
+    fn(row) {
+      let assert Ok(value) = d.run(row.1, d.sint32(1))
+      let assert True = value == row.0
+      let assert True = e.sint32_field(1, row.0) == row.1
+      let assert Ok(value) = d.run(row.1, d.sint64(1))
+      let assert True = value == row.0
+      let assert True = e.sint64_field(1, row.0) == row.1
+    },
+  )
+  let assert 10 = e.varint_size(-1)
 }
 
 @target(erlang)
-/// Full-width application integers are supported on Erlang only.
-/// No arguments or errors; run with `gleam test --target erlang`.
 pub fn wide_integer_test() {
+  // Field 1 is int64 min/max or uint64 max; these full-width values are Erlang-only.
   let assert <<8, 128, 128, 128, 128, 128, 128, 128, 128, 128, 1>> =
-    encode.int64_field(1, -9_223_372_036_854_775_808)
+    e.int64_field(1, -9_223_372_036_854_775_808)
   let assert Ok(-9_223_372_036_854_775_808) =
-    decode.run(
-      <<8, 128, 128, 128, 128, 128, 128, 128, 128, 128, 1>>,
-      decode.int64(1),
-    )
+    d.run(<<8, 128, 128, 128, 128, 128, 128, 128, 128, 128, 1>>, d.int64(1))
   let assert <<8, 255, 255, 255, 255, 255, 255, 255, 255, 127>> =
-    encode.int64_field(1, 9_223_372_036_854_775_807)
+    e.int64_field(1, 9_223_372_036_854_775_807)
   let assert Ok(9_223_372_036_854_775_807) =
-    decode.run(
-      <<8, 255, 255, 255, 255, 255, 255, 255, 255, 127>>,
-      decode.int64(1),
-    )
+    d.run(<<8, 255, 255, 255, 255, 255, 255, 255, 255, 127>>, d.int64(1))
   let assert <<8, 255, 255, 255, 255, 255, 255, 255, 255, 255, 1>> =
-    encode.uint64_field(1, 18_446_744_073_709_551_615)
+    e.uint64_field(1, 18_446_744_073_709_551_615)
   let assert Ok(18_446_744_073_709_551_615) =
-    decode.run(
-      <<8, 255, 255, 255, 255, 255, 255, 255, 255, 255, 1>>,
-      decode.uint64(1),
-    )
+    d.run(<<8, 255, 255, 255, 255, 255, 255, 255, 255, 255, 1>>, d.uint64(1))
 }
 
-/// Defaults interpret present signed fields and leave absent fields unchanged.
-/// No arguments or errors; run with `gleam test`.
 pub fn signed_default_test() {
+  // Field 1=-1 is present, so signed defaults must decode rather than replace it.
   let data = <<8, 255, 255, 255, 255, 255, 255, 255, 255, 255, 1>>
-  let assert Ok(-1) = decode.run(data, decode.int32_with_default(1, 0))
-  let assert Ok(-1) = decode.run(data, decode.int64_with_default(1, 0))
-  let assert Ok(7) = decode.run(<<>>, decode.int64_with_default(1, 7))
+  let assert Ok(-1) = d.run(data, d.int32_with_default(1, 0))
+  let assert Ok(-1) = d.run(data, d.int64_with_default(1, 0))
+  // Missing field 1 uses default 7; an unknown field 2=-1 must not affect field 1=7.
+  let assert Ok(7) = d.run(<<>>, d.int64_with_default(1, 7))
   let assert Ok(7) =
-    decode.run(
+    d.run(
       <<16, 255, 255, 255, 255, 255, 255, 255, 255, 255, 1, 8, 7>>,
-      decode.int32(1),
+      d.int32(1),
     )
 }

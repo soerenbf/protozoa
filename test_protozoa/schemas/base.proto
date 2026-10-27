@@ -1,0 +1,4 @@
+syntax = "proto3";
+package base;
+enum BaseStatus { UNKNOWN = 0; ACTIVE = 1; INACTIVE = 2; }
+message BaseMessage { string id = 1; BaseStatus status = 2; }

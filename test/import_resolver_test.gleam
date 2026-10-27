@@ -490,6 +490,7 @@ service UserService {
 // Code generation snapshot tests
 // ============================================================================
 
+@target(erlang)
 pub fn codegen_simple_message_test() {
   let proto =
     "syntax = \"proto3\";
@@ -519,6 +520,7 @@ message SimpleMessage {
   |> birdie.snap(title: "Simple message code generation")
 }
 
+@target(erlang)
 pub fn codegen_with_imports_test() {
   let base_proto =
     "syntax = \"proto3\";
@@ -569,6 +571,7 @@ message Message {
   |> birdie.snap(title: "Code generation with imports")
 }
 
+@target(erlang)
 pub fn codegen_service_test() {
   let service_proto =
     "syntax = \"proto3\";

@@ -1,0 +1,7 @@
+syntax = "proto3";
+package same;
+message Value { string text = 1; }
+message Envelope {
+  message Item { string text = 1; }
+  enum State { ZERO = 0; READY = 1; }
+}

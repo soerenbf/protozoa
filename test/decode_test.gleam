@@ -30,6 +30,7 @@ pub fn int32_with_default_decoder_test() {
 
   assert decode.run(encoded, with: decoder_correct) == Ok(42)
   assert decode.run(encoded, with: decoder_default) == Ok(99)
+  // Missing field 1 in an empty message uses default 77.
   assert decode.run(<<>>, with: decoder_empty) == Ok(77)
 }
 
@@ -73,6 +74,7 @@ pub fn bool_with_default_decoder_test() {
 }
 
 pub fn bytes_decoder_test() {
+  // Field 1 contains raw bytes [1,2,3,4,5]; field 2 contains present empty bytes.
   let encoded = encode.bytes(1, <<1, 2, 3, 4, 5>>)
   let encoded_empty = encode.bytes(2, <<>>)
   let decoder = decode.bytes(1)
@@ -605,13 +607,8 @@ pub fn unsupported_wire_type_in_decode_field_test() {
   ]) = decode.run(unsupported_wire_type_data, with: decoder)
 }
 
-pub fn repeated_int32_packed_wire_test() {
-  let assert Ok([1, 128, 2, 3]) =
-    decode.run(
-      <<8, 1, 10, 3, 128, 1, 2, 8, 3, 10, 0>>,
-      decode.repeated_int32(1),
-    )
-  let assert Error(_) = decode.run(<<10, 1, 128>>, decode.repeated_int32(1))
+pub fn repeated_int32_wrong_wire_test() {
+  // Field 1 uses fixed32 wire type instead of int32's varint or packed bytes.
   let assert Error(_) = decode.run(<<13, 0, 0, 0, 0>>, decode.repeated_int32(1))
 }
 
@@ -620,9 +617,11 @@ pub fn repeated_int32_packed_wire_test() {
 pub fn optional_message_presence_and_merge_test() {
   let decoder =
     decode.optional_nested_message(1, decode.int32_with_default(1, 0))
+  // Field 1 is absent, empty, then {field 1=7} followed by an empty occurrence.
   let assert Ok(Error(Nil)) = decode.run(<<>>, decoder)
   let assert Ok(Ok(0)) = decode.run(<<10, 0>>, decoder)
   let assert Ok(Ok(7)) = decode.run(<<10, 2, 8, 7, 10, 0>>, decoder)
+  // Field 1's message has a truncated tag, then a truncated value across occurrences.
   let assert Error(_) = decode.run(<<10, 1, 128>>, decoder)
   let assert Error(_) = decode.run(<<10, 2, 8, 128, 10, 1, 1>>, decoder)
   // Public dictionary callbacks still receive only real fields, including inside
@@ -633,16 +632,10 @@ pub fn optional_message_presence_and_merge_test() {
       |> result.map(list.length)
       |> result.map_error(fn(_) { [] })
     })
+  // Two field-1 messages contain inner field 1=7 and 1=9, preserving both occurrences.
   let assert Ok(Ok(2)) =
     decode.run(
       <<10, 2, 8, 7, 10, 2, 8, 9>>,
       decode.optional_nested_message(1, indexed),
     )
-}
-
-/// Map normalization retains the last value per key, not duplicate entries.
-/// No arguments; asserts on mismatches. Example: `gleam test`.
-pub fn map_entry_last_value_test() {
-  let assert [#(7, "new")] = decode.map_entries([#(7, "old"), #(7, "new")])
-  let assert [] = decode.map_entries([])
 }

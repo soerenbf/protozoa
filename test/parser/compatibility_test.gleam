@@ -1,3 +1,5 @@
+//// Parser compatibility tests cover protobuf declarations and accepted syntax variants.
+
 import gleam/list as gleam_list
 import gleam/option.{None, Some}
 import gleam/string

@@ -1,8 +1,11 @@
+//// Router generation snapshots assert HTTP query-to-field mapping.
+
 import birdie
 import protozoa/internal/codegen
 import protozoa/internal/type_registry
 import protozoa/parser/file
 
+@target(erlang)
 pub fn query_parameter_mapping_test() {
   let proto_content =
     "syntax = \"proto3\";

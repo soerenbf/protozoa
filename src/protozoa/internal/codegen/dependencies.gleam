@@ -1,4 +1,12 @@
-//// Required codec dependencies, independent of unused protobuf imports.
+//// Checks dependencies between generated Gleam modules before rendering.
+////
+//// A field referencing a type in another proto file creates a dependency.
+//// Optional, repeated, map and oneof fields are included; unused proto imports
+//// and references within the same file do not create dependencies.
+////
+//// For example, a.proto -> b.proto is allowed, but a.proto -> b.proto ->
+//// a.proto is rejected because the generated Gleam imports would be cyclic.
+//// Callers can also supply dependencies required by generated extensions.
 
 import gleam/dict
 import gleam/list

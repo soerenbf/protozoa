@@ -2,6 +2,8 @@
 *.beam
 *.ez
 /build
+/codegen/build
+/runtime/build
 erl_crash.dump
 
 test/generated_outputs/

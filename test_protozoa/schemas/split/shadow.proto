@@ -1,0 +1,5 @@
+syntax = "proto3";
+package p;
+message X { string text = 1; }
+message p { message X { int32 number = 1; } }
+message Root { .p.X x = 1; }

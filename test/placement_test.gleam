@@ -1,3 +1,5 @@
+//// Placement tests assert dependency ownership and deterministic emitted module paths.
+
 import gleam/list
 import gleam/string
 import protozoa/internal/codegen/placement
@@ -68,7 +70,7 @@ pub fn local_collisions_test() {
     |> add("b.proto", "package b; enum State { ZERO = 0; }")
   let assert Ok(_) = placement.plan(registry, ["a.proto", "b.proto"], "gen")
   let ctx = types.new_local_ctx(registry, "a.proto")
-  let assert "Zero" = types.enum_constructor("State", "ZERO", ctx)
+  let assert "StateZero" = types.enum_constructor("State", "ZERO", ctx)
   let assert "State" = types.qualified_type("State", ctx)
   let assert "state" = types.qualified_fn("State", ctx)
 }
@@ -168,8 +170,13 @@ pub fn emitted_identifier_rejections_test() {
     let assert True = string.contains(error, "a.proto")
   })
   reject("package p; message Outer { message _ {} }", "p.Outer._")
-  reject("package p; enum State { _ = 0; }", "p.State._")
-  reject("package p; enum State { _123 = 0; }", "p.State._123")
+  let enums =
+    add(
+      type_registry.new(),
+      "a.proto",
+      "package p; enum State { _ = 0; _123 = 1; }",
+    )
+  let assert Ok(_) = placement.plan(enums, ["a.proto"], "gen")
   let registry =
     add(
       type_registry.new(),

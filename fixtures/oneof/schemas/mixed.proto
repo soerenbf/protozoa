@@ -1,3 +1,0 @@
-syntax = "proto3";
-message Detail { string text = 1; }
-message Envelope { oneof choice { int32 number = 1; Detail nested = 2; bool flag = 3; } }

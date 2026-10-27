@@ -23,12 +23,11 @@ pub type Context {
     package: String,
     local_names: Bool,
     references: dict.Dict(String, #(String, String, String)),
-    enum_names: dict.Dict(#(String, String), String),
   )
 }
 
-/// Create a context from `registry` and its source `file_path`, including the
-/// module-wide enum naming policy. Unknown paths use an empty package; never
+/// Create a context from `registry` and its source `file_path`.
+/// Unknown paths use an empty package; never
 /// fails. Example: `new_ctx(registry, "messages.proto")`.
 pub fn new_ctx(registry: TypeRegistry, file_path: String) -> Context {
   let package = case type_registry.get_file_package(registry, file_path) {
@@ -41,49 +40,15 @@ pub fn new_ctx(registry: TypeRegistry, file_path: String) -> Context {
     package: package,
     local_names: False,
     references: dict.new(),
-    enum_names: enum_names(registry),
   )
 }
 
 /// Build a package-free naming context for `file_path` in `registry`.
-/// Resolution retains the original registry/package. Enum collisions are scoped
-/// to this file only. Never fails; unknown files have no enum policy.
+/// Resolution retains the original registry/package. Never fails.
 /// Example: `new_local_ctx(registry, "items.proto")`.
 pub fn new_local_ctx(registry: TypeRegistry, file_path: String) -> Context {
   let ctx = new_ctx(registry, file_path)
-  let local_messages =
-    registry.messages
-    |> dict.to_list
-    |> list.filter_map(fn(entry) {
-      case dict.get(registry.type_sources, entry.0) {
-        Ok(path) if path == file_path ->
-          Ok(#(local_name(entry.0, ctx.package), entry.1))
-        _ -> Error(Nil)
-      }
-    })
-    |> dict.from_list
-  let local_enums =
-    registry.enums
-    |> dict.to_list
-    |> list.filter_map(fn(entry) {
-      case dict.get(registry.type_sources, entry.0) {
-        Ok(path) if path == file_path ->
-          Ok(#(local_name(entry.0, ctx.package), entry.1))
-        _ -> Error(Nil)
-      }
-    })
-    |> dict.from_list
-  Context(
-    ..ctx,
-    local_names: True,
-    enum_names: enum_names(
-      type_registry.TypeRegistry(
-        ..registry,
-        messages: local_messages,
-        enums: local_enums,
-      ),
-    ),
-  )
+  Context(..ctx, local_names: True)
 }
 
 fn local_name(name: String, package: String) -> String {
@@ -142,17 +107,15 @@ pub fn constructor(owner: String, variant: String) -> String {
   owner <> capitalize_first(variant)
 }
 
-/// Render an enum variant using the module-wide collision policy.
-/// `owner` is the rendered type, `variant` the proto name, and `ctx` the registry
-/// context. Never fails. Example: a unique `enum_constructor("State", "ZERO", ctx)`
-/// returns `"Zero"`; a colliding one returns `"StateZero"`.
+/// Prefix an enum variant with its generated owning type.
+/// `owner` is the rendered type, `variant` the proto name; `ctx` is unused.
+/// Never fails. Example: `enum_constructor("State", "ZERO", ctx)` returns `"StateZero"`.
 pub fn enum_constructor(
   owner: String,
   variant: String,
-  ctx: Context,
+  _ctx: Context,
 ) -> String {
-  dict.get(ctx.enum_names, #(owner, variant))
-  |> result.unwrap(enum_variant(variant))
+  owner <> enum_variant(variant)
 }
 
 /// Render uppercase snake enum `name` as PascalCase without stripping prefixes.
@@ -166,59 +129,6 @@ pub fn enum_variant(name: String) -> String {
       |> list.map(fn(part) { part |> string.lowercase |> capitalize_first })
       |> string.join("")
     False -> capitalize_first(name)
-  }
-}
-
-fn enum_names(registry: TypeRegistry) -> dict.Dict(#(String, String), String) {
-  let variants =
-    registry.enums
-    |> dict.to_list
-    |> list.flat_map(fn(entry) {
-      let #(name, enum) = entry
-      list.map(enum.values, fn(value) { #(flatten_type_name(name), value.name) })
-    })
-  let reserved =
-    registry.messages
-    |> dict.to_list
-    |> list.flat_map(fn(entry) {
-      let #(name, message) = entry
-      let owner = flatten_type_name(name)
-      [
-        owner,
-        ..list.flat_map(message.oneofs, fn(oneof) {
-          list.map(oneof.fields, fn(field) {
-            constructor(owner <> capitalize_first(oneof.name), field.name)
-          })
-        })
-      ]
-    })
-  qualify_collisions(variants, reserved, set.new())
-}
-
-// Qualification can itself collide with another bare variant; reach a fixed point.
-fn qualify_collisions(
-  variants: List(#(String, String)),
-  reserved: List(String),
-  qualified: set.Set(#(String, String)),
-) -> dict.Dict(#(String, String), String) {
-  let names =
-    list.map(variants, fn(key) {
-      #(key, case set.contains(qualified, key) {
-        True -> key.0 <> enum_variant(key.1)
-        False -> enum_variant(key.1)
-      })
-    })
-  let all_names = list.append(reserved, list.map(names, fn(entry) { entry.1 }))
-  let next =
-    list.fold(names, qualified, fn(acc, entry) {
-      case list.count(all_names, fn(name) { name == entry.1 }) > 1 {
-        True -> set.insert(acc, entry.0)
-        False -> acc
-      }
-    })
-  case set.size(next) == set.size(qualified) {
-    True -> dict.from_list(names)
-    False -> qualify_collisions(variants, reserved, next)
   }
 }
 

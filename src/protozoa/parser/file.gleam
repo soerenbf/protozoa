@@ -134,6 +134,7 @@ fn proto_file_parser() {
   use syntax <- nibble.do(proto.syntax())
   // Parse all top-level items (messages, enums, services) in ANY order
   use items <- nibble.do(c.many(top_level_item()))
+  // Reject unsupported trailing syntax instead of silently dropping declarations.
   use _ <- nibble.do(nibble.eof())
   let packages =
     list.filter_map(items, fn(item) {

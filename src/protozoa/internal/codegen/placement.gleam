@@ -1,4 +1,18 @@
-//// Pure per-file placement planning. The combined generator is unchanged.
+//// Plans where protobuf declarations live in per-file generated Gleam code.
+////
+//// Each proto file maps to a module beneath the caller's prefix. For example,
+//// "api/user.proto" with prefix "generated" becomes "generated/api/user".
+//// A protobuf package does not become part of the local type name:
+//// "example.api.User" becomes "User" in that module. Nested declarations retain
+//// their containing message name, such as "Envelope.Item" -> "EnvelopeItem".
+////
+//// The plan retains each declaration's protobuf identity and source file so
+//// code generation can resolve cross-file references to their owning module.
+//// It rejects unsafe paths and names that collide after normalization, rather
+//// than silently renaming declarations or overwriting output.
+////
+//// This module plans and validates names only; it performs no filesystem I/O
+//// and does not change the combined-output generator's naming policy.
 
 import gleam/dict
 import gleam/int

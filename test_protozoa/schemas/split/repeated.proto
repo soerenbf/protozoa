@@ -1,0 +1,3 @@
+syntax = "proto3";
+package p.repeated;
+message ValuesFields { repeated string values = 1; string label = 2; }

@@ -1,3 +1,5 @@
+//// Oneof generation preserves alternatives, scoped types and decoder composition.
+
 import gleam/int
 import gleam/list
 import gleam/string
