@@ -1,0 +1,4 @@
+syntax = "proto3";
+package same;
+message Item { string text = 1; }
+message Value { string text = 1; }

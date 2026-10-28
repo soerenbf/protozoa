@@ -1,3 +1,0 @@
-syntax = "proto3";
-package p.maps;
-message ValuesFields { map<string, string> values = 1; string label = 2; }

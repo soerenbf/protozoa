@@ -1,3 +1,0 @@
-syntax = "proto3";
-enum Sign { ZERO = 0; NEGATIVE = -1; MINIMUM = -2147483648; }
-message Enumeration { Sign value = 1; repeated Sign values = 2; }

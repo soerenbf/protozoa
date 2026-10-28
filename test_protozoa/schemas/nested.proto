@@ -1,0 +1,27 @@
+syntax = "proto3";
+
+package nested;
+
+message Outer {
+  enum Collision {
+    NESTED_CONTAINER = 0;
+    NESTED_OUTER_INNER = 1;
+  }
+  message Inner {
+    string value = 1;
+    message Deep {
+      Inner lexical = 1;
+      .nested.Outer.Inner absolute = 2;
+      Container.Inner shadow = 3;
+    }
+  }
+  Inner inner = 1;
+  repeated Inner items = 2;
+  optional Collision collision = 3;
+}
+
+message Container {
+  Outer.Inner nested_inner = 1;
+  message Inner { int32 number = 1; }
+  Inner local = 2;
+}

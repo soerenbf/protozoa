@@ -1,0 +1,19 @@
+syntax = "proto3";
+
+package app;
+
+import "base.proto";
+import "a/common.proto";
+import "b/common.proto";
+import "decode.proto";
+import "google/protobuf/struct.proto";
+
+message AppMessage {
+  base.BaseMessage base = 1;
+  base.BaseStatus status = 2;
+  same.Item first = 3;
+  other.Item second = 4;
+  runtime.Token token = 5;
+  same.Value ordinary = 6;
+  google.protobuf.Value well_known = 7;
+}

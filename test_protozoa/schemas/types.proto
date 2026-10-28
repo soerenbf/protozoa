@@ -1,5 +1,7 @@
 syntax = "proto3";
+
 package types;
+
 message AllTypes {
   double double_field = 1;
   float float_field = 2;
@@ -17,93 +19,47 @@ message AllTypes {
   string string_field = 14;
   bytes bytes_field = 15;
 }
+
 message RepeatedTypes {
   repeated string strings = 1;
   repeated int32 numbers = 2;
   repeated bool flags = 3;
+  repeated OptionalTypes messages = 4;
+  repeated OptionalTypes.State states = 5;
+
+  message ValuesFields {
+    repeated string values = 1;
+    string label = 2;
+  }
 }
-// Compact shape coverage: each primitive appears once per dispatch branch.
-message OptionalScalars {
-  optional double double_value = 1;
-  optional float float_value = 2;
-  optional int32 int32_value = 3;
-  optional int64 int64_value = 4;
-  optional uint32 uint32_value = 5;
-  optional uint64 uint64_value = 6;
-  optional sint32 sint32_value = 7;
-  optional sint64 sint64_value = 8;
-  optional fixed32 fixed32_value = 9;
-  optional fixed64 fixed64_value = 10;
-  optional sfixed32 sfixed32_value = 11;
-  optional sfixed64 sfixed64_value = 12;
-  optional bool bool_value = 13;
-  optional string string_value = 14;
-  optional bytes bytes_value = 15;
-}
-message RepeatedScalars {
-  repeated double double_value = 1;
-  repeated float float_value = 2;
-  repeated int32 int32_value = 3;
-  repeated int64 int64_value = 4;
-  repeated uint32 uint32_value = 5;
-  repeated uint64 uint64_value = 6;
-  repeated sint32 sint32_value = 7;
-  repeated sint64 sint64_value = 8;
-  repeated fixed32 fixed32_value = 9;
-  repeated fixed64 fixed64_value = 10;
-  repeated sfixed32 sfixed32_value = 11;
-  repeated sfixed64 sfixed64_value = 12;
-  repeated bool bool_value = 13;
-  repeated string string_value = 14;
-  repeated bytes bytes_value = 15;
-}
-message MapScalars {
-  map<string, double> double_value = 1;
-  map<string, float> float_value = 2;
-  map<string, int32> int32_value = 3;
-  map<string, int64> int64_value = 4;
-  map<string, uint32> uint32_value = 5;
-  map<string, uint64> uint64_value = 6;
-  map<string, sint32> sint32_value = 7;
-  map<string, sint64> sint64_value = 8;
-  map<string, fixed32> fixed32_value = 9;
-  map<string, fixed64> fixed64_value = 10;
-  map<string, sfixed32> sfixed32_value = 11;
-  map<string, sfixed64> sfixed64_value = 12;
-  map<string, bool> bool_value = 13;
-  map<string, string> string_value = 14;
-  map<string, bytes> bytes_value = 15;
-}
-message MapKeys {
-  map<int32, int32> int32_key = 1;
-  map<int64, int32> int64_key = 2;
-  map<uint32, int32> uint32_key = 3;
-  map<uint64, int32> uint64_key = 4;
-  map<sint32, int32> sint32_key = 5;
-  map<sint64, int32> sint64_key = 6;
-  map<fixed32, int32> fixed32_key = 7;
-  map<fixed64, int32> fixed64_key = 8;
-  map<sfixed32, int32> sfixed32_key = 9;
-  map<sfixed64, int32> sfixed64_key = 10;
-  map<bool, int32> bool_key = 11;
-  map<string, int32> string_key = 12;
-}
-message ChoiceScalars {
+
+message OptionalTypes {
+  enum State {
+    ZERO = 0;
+    READY = 1;
+    NEGATIVE = -1;
+  }
+  optional string maybe_string = 1;
+  optional int32 maybe_number = 2;
+  OptionalTypes next = 3;
+  optional State state = 4;
   oneof choice {
-    double double_value = 1;
-    float float_value = 2;
-    int32 int32_value = 3;
-    int64 int64_value = 4;
-    uint32 uint32_value = 5;
-    uint64 uint64_value = 6;
-    sint32 sint32_value = 7;
-    sint64 sint64_value = 8;
-    fixed32 fixed32_value = 9;
-    fixed64 fixed64_value = 10;
-    sfixed32 sfixed32_value = 11;
-    sfixed64 sfixed64_value = 12;
-    bool bool_value = 13;
-    string string_value = 14;
-    bytes bytes_value = 15;
+    int64 number = 5;
+    OptionalTypes message = 6;
+    State selected_state = 7;
+    bool flag = 56;
+  }
+}
+
+message MapTypes {
+  map<string, string> string_map = 1;
+  map<int32, string> int_map = 2;
+  map<string, OptionalTypes> messages = 3;
+  map<string, OptionalTypes.State> states = 4;
+  map<sint32, fixed32> numeric_defaults = 5;
+
+  message ValuesFields {
+    map<string, string> values = 1;
+    string label = 2;
   }
 }
