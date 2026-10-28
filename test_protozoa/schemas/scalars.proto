@@ -5,5 +5,3 @@ message OptionalInt32 { optional int32 value = 1; }
 message ChoiceSint64 { oneof selection { sint64 value = 1; } }
 message RepeatedDouble { repeated double value = 1; }
 message MapInt32 { map<int32, int32> values = 1; }
-enum State { ZERO = 0; FIRST = 1; SECOND = 2; }
-message EnumList { repeated State value = 1; }

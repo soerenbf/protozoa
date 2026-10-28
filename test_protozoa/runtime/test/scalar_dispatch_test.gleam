@@ -1,7 +1,7 @@
 //// Observable generated dispatch covers every primitive across field shapes.
 //// Canonical payloads distinguish signed, zigzag, unsigned and fixed readers.
 
-import generated/types as t
+import generated/combined/types as t
 import gleam/bit_array as bits
 import gleam/list
 import gleam/option.{Some}
@@ -69,6 +69,7 @@ fn wire() {
   |> bits.concat
 }
 
+/// Every primitive selects its generated singular and optional field helpers.
 pub fn singular_and_optional_test() {
   let assert Ok(value) = t.decode_types_all_types(wire())
   // The bytes field carries arbitrary binary, not UTF-8 text.
@@ -120,6 +121,7 @@ pub fn singular_and_optional_test() {
   let assert True = defaults == expected
 }
 
+/// Every primitive selects its repeated reader, including packed numeric fields.
 pub fn repeated_decode_test() {
   // The same scalar occurrences decode as singleton repeated fields.
   let assert Ok(value) = t.decode_types_repeated_scalars(wire())
@@ -157,6 +159,7 @@ pub fn repeated_decode_test() {
   // Repeated numeric encoder fallbacks are deliberately not asserted.
 }
 
+/// Every primitive oneof alternative selects its generated codec.
 pub fn oneof_dispatch_test() {
   cases()
   |> list.index_map(fn(row, index) {
@@ -170,6 +173,7 @@ pub fn oneof_dispatch_test() {
   Nil
 }
 
+/// Every primitive map value selects its reader, writer and default helper.
 pub fn map_value_dispatch_test() {
   let bytes =
     cases()
@@ -227,6 +231,7 @@ pub fn map_value_dispatch_test() {
   let assert True = defaults == expected
 }
 
+/// Every legal map key family selects its key reader, writer and default.
 pub fn map_key_dispatch_test() {
   // Canonical key payloads reuse primitive vectors, ordered by MapKeys fields.
   let rows = cases()

@@ -6,7 +6,7 @@ import gleam/string
 import protozoa/parser/file
 import protozoa/parser/proto
 
-/// Regression: token-based whitespace and inline bodies already work on main.
+/// Verifies whitespace and inline nested declarations preserve fields and order.
 pub fn whitespace_inline_test() {
   let assert Ok(parsed) =
     file.parse(

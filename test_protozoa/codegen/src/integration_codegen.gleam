@@ -6,7 +6,6 @@ import gleam/list
 import gleam/string
 import protozoa/internal/codegen
 import protozoa/internal/import_resolver
-import protozoa/internal/type_registry
 import protozoa/parser/file
 import simplifile
 
@@ -15,10 +14,8 @@ import simplifile
 pub fn main() {
   list.each(
     [
-      #("app", ["base", "app"]),
       #("service", ["service"]),
       #("types", ["types"]),
-      #("nested", ["nested"]),
       #("mixed", ["mixed"]),
       #("scalars", ["scalars"]),
       #("sign", ["sign"]),
@@ -39,12 +36,45 @@ pub fn main() {
         |> list.map(fn(pair) { file.Path(pair.0, pair.1) })
       let assert Ok(source) =
         codegen.generate(files, import_resolver.get_type_registry(resolver))
-      let assert Ok(Nil) = simplifile.create_directory_all("build/generated")
       let assert Ok(Nil) =
-        simplifile.write("build/generated/" <> entry.0 <> ".gleam", source)
+        simplifile.create_directory_all("build/generated/combined")
+      let assert Ok(Nil) =
+        simplifile.write(
+          "build/generated/combined/" <> entry.0 <> ".gleam",
+          source,
+        )
     },
   )
-  list.each(split_modules(), fn(module) {
+  let sources =
+    list.fold(
+      [
+        "a/common",
+        "b/common",
+        "decode",
+        "root",
+        "shadow",
+        "repeated",
+        "map",
+        "service",
+      ],
+      dict.new(),
+      fn(sources, name) {
+        let assert Ok(source) =
+          simplifile.read("../schemas/shared/" <> name <> ".proto")
+        dict.insert(sources, name <> ".proto", import_resolver.Raw(source))
+      },
+    )
+  let assert Ok(resolver) = import_resolver.resolve(sources, "root.proto")
+  let files =
+    import_resolver.get_all_loaded_files(resolver)
+    |> list.map(fn(pair) { file.Path(pair.0, pair.1) })
+  let registry = import_resolver.get_type_registry(resolver)
+  let assert Ok(combined) = codegen.generate(files, registry)
+  let assert Ok(Nil) =
+    simplifile.write("build/generated/combined/shared.gleam", combined)
+  let assert Ok(modules) =
+    codegen.generate_modules(files, registry, "generated/per_file")
+  list.each(modules, fn(module) {
     let path = "build/" <> module.module <> ".gleam"
     let directory =
       module.module
@@ -56,42 +86,4 @@ pub fn main() {
     let assert Ok(Nil) = simplifile.create_directory_all("build/" <> directory)
     let assert Ok(Nil) = simplifile.write(path, module.source)
   })
-}
-
-/// Resolve checked-in split schemas and render their per-file modules.
-/// No arguments; asserts on file, parse, resolution or generation errors.
-/// Example: `split_modules()`.
-pub fn split_modules() -> List(codegen.GeneratedModule) {
-  let files = split_files()
-  let registry =
-    list.fold(files, type_registry.new(), fn(registry, f) {
-      let assert Ok(registry) =
-        type_registry.add_file(registry, f.path, f.content)
-      registry
-    })
-  let assert Ok(modules) =
-    codegen.generate_modules(files, registry, "generated/split")
-  modules
-}
-
-/// Load the actual import closure of split/root.proto from the integration owner.
-/// No arguments; asserts on missing, malformed or unresolved schemas.
-/// Example: `split_files()`.
-pub fn split_files() -> List(file.Path) {
-  let sources =
-    list.fold(
-      [
-        "a/common", "b/common", "decode", "root", "shadow", "repeated", "map",
-        "service",
-      ],
-      dict.new(),
-      fn(sources, name) {
-        let assert Ok(source) =
-          simplifile.read("../schemas/split/" <> name <> ".proto")
-        dict.insert(sources, name <> ".proto", import_resolver.Raw(source))
-      },
-    )
-  let assert Ok(resolver) = import_resolver.resolve(sources, "root.proto")
-  import_resolver.get_all_loaded_files(resolver)
-  |> list.map(fn(pair) { file.Path(pair.0, pair.1) })
 }

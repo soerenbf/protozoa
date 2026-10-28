@@ -1,4 +1,0 @@
-syntax = "proto3";
-package app;
-import "base.proto";
-message AppMessage { base.BaseMessage base = 1; base.BaseStatus status = 2; }

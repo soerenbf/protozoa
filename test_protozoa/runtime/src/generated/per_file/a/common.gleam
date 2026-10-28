@@ -6,6 +6,7 @@
 
 import gleam/int
 import gleam/list
+import gleam/option
 import gleam/result
 import gleam/string
 import protozoa/decode
@@ -25,11 +26,17 @@ pub type EnvelopeState {
 }
 
 pub type Envelope {
-  Envelope
+  Envelope(state: option.Option(EnvelopeState))
 }
 
-pub fn encode_envelope(_message: Envelope) -> BitArray {
-  encode.message([])
+pub fn encode_envelope(message: Envelope) -> BitArray {
+  encode.message([
+    case message.state {
+      option.Some(value) ->
+        encode.int32_field(1, encode_envelope_state_value(value))
+      option.None -> <<>>
+    },
+  ])
 }
 
 pub fn encode_envelope_item(message: EnvelopeItem) -> BitArray {
@@ -46,7 +53,11 @@ pub fn encode_value(message: Value) -> BitArray {
 
 pub fn envelope_decoder() -> decode.Decoder(Envelope) {
   use _ <- decode.then(decode.success(Nil))
-  decode.success(Envelope)
+  use state <- decode.then(decode.map(
+    decode.optional_field(1, decode_envelope_state_from_field),
+    option.from_result,
+  ))
+  decode.success(Envelope(state: state))
 }
 
 pub fn decode_envelope(

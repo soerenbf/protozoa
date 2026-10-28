@@ -1,18 +1,27 @@
 //// Cross-module codecs preserve imported values, scoped enums and recursive fields.
 
-import generated/split/a/common as a
-import generated/split/b/common as b
-import generated/split/decode as token
-import generated/split/google/protobuf/struct as wellknown
-import generated/split/map
-import generated/split/repeated
-import generated/split/root
-import generated/split/shadow
+import generated/per_file/a/common as a
+import generated/per_file/b/common as b
+import generated/per_file/decode as token
+import generated/per_file/google/protobuf/struct as wellknown
+import generated/per_file/map
+import generated/per_file/repeated
+import generated/per_file/root
+import generated/per_file/shadow
 import gleam/option.{None, Some}
 
-/// Check imported fields, enum variants and recursive values without arguments.
-/// Asserts codec success and equality. Example: `cross_file_roundtrip_test()`.
+/// Imported fields, scoped enums and recursive values retain their owning codecs.
 pub fn cross_file_roundtrip_test() {
+  // Independent bytes: field 2 other.number=42, field 4 state=READY,
+  // field 5 optional_state=ZERO, field 6 packed states=[ZERO, READY],
+  // and field 12 selects status=READY.
+  let data = <<18, 2, 8, 42, 32, 1, 40, 0, 50, 2, 0, 1, 96, 1>>
+  let assert Ok(wire) = root.decode_root(data)
+  let assert Some(b.Item(42)) = wire.other
+  let assert a.EnvelopeStateReady = wire.state
+  let assert Some(a.EnvelopeStateZero) = wire.optional_state
+  let assert [a.EnvelopeStateZero, a.EnvelopeStateReady] = wire.states
+  let assert Some(root.RootPickStatus(a.EnvelopeStateReady)) = wire.pick
   let item = a.EnvelopeItem(text: "nested")
   let leaf =
     root.Root(
@@ -64,7 +73,7 @@ pub fn absolute_shadow_roundtrip_test() {
   let assert True = decoded == nested
 }
 
-/// The bundled Value map retains required-value decoding, not ordinary defaults.
+/// Bundled Struct values stay distinct from ordinary imported Value messages.
 pub fn bundled_struct_roundtrip_test() {
   let value =
     wellknown.Struct(fields: [

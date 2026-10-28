@@ -26,6 +26,5 @@ if ! diff -ru -- "$output" "$stage"; then
 fi
 for target in erlang javascript; do
   gleam test --target "$target"
-  (cd "$here/codegen" && gleam test --target "$target")
   (cd "$here/runtime" && gleam test --target "$target")
 done

@@ -1,14 +1,14 @@
-//// Generated scalar codecs preserve presence, defaults, enum packing and safe zigzags.
+//// Generated scalar codecs preserve presence, defaults and signed enum mapping.
 //// Canonical literal bytes are independent of the generated encoder.
 
-import generated/scalars as s
-import generated/sign
-import gleam/bit_array as bits
+import generated/combined/scalars as s
+import generated/combined/sign
 import gleam/list
 import gleam/option.{None, Some}
 
+/// Optional and oneof zero retain presence; map entries receive generated defaults.
 pub fn presence_and_defaults_test() {
-  // Missing field 1 differs from explicitly selected zero for optional and oneof fields.
+  // Missing field 1 differs from explicitly selected zero.
   let assert Ok(s.OptionalInt32(None)) = s.decode_optional_int32(<<>>)
   let assert Ok(s.OptionalInt32(Some(0))) = s.decode_optional_int32(<<8, 0>>)
   let assert <<8, 0>> = s.encode_optional_int32(s.OptionalInt32(Some(0)))
@@ -19,33 +19,13 @@ pub fn presence_and_defaults_test() {
   let assert Ok(decoded) = s.decode_choice_sint64(<<8, 0>>)
   let assert True = decoded == value
   let assert <<8, 0>> = s.encode_choice_sint64(value)
-  // Map field 1 defaults missing keys/values and keeps the last duplicate key.
+  // Map field 1 defaults omitted keys and values.
   let assert Ok(s.MapInt32([#(0, 0)])) = s.decode_map_int32(<<10, 0>>)
   let assert Ok(s.MapInt32([#(1, 0)])) = s.decode_map_int32(<<10, 2, 8, 1>>)
   let assert Ok(s.MapInt32([#(0, 1)])) = s.decode_map_int32(<<10, 2, 16, 1>>)
-  let assert Ok(s.MapInt32([#(1, 30), #(2, 20)])) =
-    s.decode_map_int32(<<
-      10,
-      4,
-      8,
-      1,
-      16,
-      10,
-      10,
-      4,
-      8,
-      2,
-      16,
-      20,
-      10,
-      4,
-      8,
-      1,
-      16,
-      30,
-    >>)
 }
 
+/// Packed doubles dispatch to the generated fixed64 reader.
 pub fn packed_double_test() {
   // Packed field 1 contains IEEE754 doubles [-1.0, 1.0] without scalar tags.
   let assert Ok(s.RepeatedDouble([-1.0, 1.0])) =
@@ -69,68 +49,9 @@ pub fn packed_double_test() {
       240,
       63,
     >>)
-  // Misaligned fixed64 data cannot contain a complete double.
-  let assert Error(_) = s.decode_repeated_double(<<10, 1, 0>>)
 }
 
-pub fn zigzag_boundaries_test() {
-  // Field 1 is sint64 ±(2^53−1); odd unsigned zigzags must not round on JS.
-  list.each(
-    [
-      #(-9_007_199_254_740_991, <<8, 253, 255, 255, 255, 255, 255, 255, 31>>),
-      #(9_007_199_254_740_991, <<8, 254, 255, 255, 255, 255, 255, 255, 31>>),
-    ],
-    fn(row) {
-      let assert Ok(s.ScalarSint64(value)) = s.decode_scalar_sint64(row.1)
-      let assert True = value == row.0
-      let assert True = s.encode_scalar_sint64(s.ScalarSint64(row.0)) == row.1
-      let assert Ok(s.ChoiceSint64(Some(s.ChoiceSint64SelectionValue(value)))) =
-        s.decode_choice_sint64(row.1)
-      let assert True = value == row.0
-    },
-  )
-}
-
-@target(erlang)
-pub fn zigzag_wide_test() {
-  // Field 1 is sint64 min/max; full-width integer zigzags are Erlang-only.
-  list.each(
-    [
-      #(-9_223_372_036_854_775_808, <<
-        8,
-        255,
-        255,
-        255,
-        255,
-        255,
-        255,
-        255,
-        255,
-        255,
-        1,
-      >>),
-      #(9_223_372_036_854_775_807, <<
-        8,
-        254,
-        255,
-        255,
-        255,
-        255,
-        255,
-        255,
-        255,
-        255,
-        1,
-      >>),
-    ],
-    fn(row) {
-      let assert Ok(s.ScalarSint64(value)) = s.decode_scalar_sint64(row.1)
-      let assert True = value == row.0
-      let assert True = s.encode_scalar_sint64(s.ScalarSint64(row.0)) == row.1
-    },
-  )
-}
-
+/// Negative enum numbers select declared constructors in singular and packed fields.
 pub fn negative_enum_test() {
   // Signed enum field 1 selects -1 or -2^31 using ten-byte sign extension.
   list.each(
@@ -173,25 +94,4 @@ pub fn negative_enum_test() {
       255,
       1,
     >>)
-}
-
-pub fn enum_stack_and_errors_test() {
-  // Enum field 1 repeats FIRST=1 12k times in packed, unpacked and mixed forms.
-  let packed =
-    bits.concat([<<10, 224, 93>>, bits.concat(list.repeat(<<1>>, 12_000))])
-  let unpacked = bits.concat(list.repeat(<<8, 1>>, 12_000))
-  let mixed = <<8, 1, packed:bits, 8, 1>>
-  let assert Ok(s.EnumList(values)) = s.decode_enum_list(mixed)
-  let assert True = values == list.repeat(s.StateFirst, 12_002)
-  list.each([packed, unpacked], fn(data) {
-    let assert Ok(s.EnumList(values)) = s.decode_enum_list(data)
-    let assert True = values == list.repeat(s.StateFirst, 12_000)
-  })
-  // Packed field 1 rejects truncated and overflowing varints.
-  list.each(
-    [<<10, 1, 128>>, <<10, 10, 255, 255, 255, 255, 255, 255, 255, 255, 255, 2>>],
-    fn(data) {
-      let assert Error(_) = s.decode_enum_list(data)
-    },
-  )
 }

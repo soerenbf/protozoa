@@ -607,6 +607,7 @@ pub fn unsupported_wire_type_in_decode_field_test() {
   ]) = decode.run(unsupported_wire_type_data, with: decoder)
 }
 
+/// Rejects fixed32 occurrences where repeated int32 requires varint or packed bytes.
 pub fn repeated_int32_wrong_wire_test() {
   // Field 1 uses fixed32 wire type instead of int32's varint or packed bytes.
   let assert Error(_) = decode.run(<<13, 0, 0, 0, 0>>, decode.repeated_int32(1))

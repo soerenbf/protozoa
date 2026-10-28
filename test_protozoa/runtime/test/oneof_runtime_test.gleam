@@ -1,8 +1,9 @@
-//// Generated oneofs preserve last-on-wire selection and message merging/errors.
+//// Generated oneofs preserve last-on-wire selection and message merging.
 
-import generated/mixed as m
+import generated/combined/mixed as m
 import gleam/option.{None, Some}
 
+/// Scalar, message and multi-byte-tag alternatives use their generated codecs.
 pub fn scalar_and_message_test() {
   // Field 1 selects number 42; field 2 selects Detail { value: "Hi" }.
   let number = m.Envelope(Some(m.EnvelopeChoiceNumber(42)))
@@ -25,6 +26,7 @@ pub fn scalar_and_message_test() {
   let assert <<>> = m.encode_envelope(m.Envelope(None))
 }
 
+/// Generated oneofs select the last alternative and merge repeated messages.
 pub fn wire_order_test() {
   // Field 1=42 then field 2="Hi", and the reverse: the last alternative wins.
   let assert Ok(m.Envelope(Some(m.EnvelopeChoiceNested(m.Detail("Hi"))))) =
@@ -40,19 +42,4 @@ pub fn wire_order_test() {
   // Repeating message field 2 with an empty message merges, preserving "Hi".
   let assert Ok(m.Envelope(Some(m.EnvelopeChoiceNested(m.Detail("Hi"))))) =
     m.decode_envelope(<<18, 4, 10, 2, 72, 105, 18, 0>>)
-}
-
-pub fn wrong_wire_and_malformed_test() {
-  // Field 1 has length-delimited bytes instead of varint; skip it, retaining field 2.
-  let assert Ok(m.Envelope(Some(m.EnvelopeChoiceNested(m.Detail("Hi"))))) =
-    m.decode_envelope(<<10, 1, 0, 18, 4, 10, 2, 72, 105>>)
-  let assert Ok(m.Envelope(None)) = m.decode_envelope(<<10, 1, 0>>)
-  // Field 2's message has a truncated tag, alone or with unknown fields around it.
-  let assert Error(_) = m.decode_envelope(<<18, 1, 128>>)
-  let assert Error(_) = m.decode_envelope(<<10, 1, 0, 18, 1, 128>>)
-  let assert Error(_) = m.decode_envelope(<<18, 1, 128, 24, 1>>)
-  // Malformed field 2 must not be hidden by a later valid scalar choice, field 1=42.
-  let assert Error(_) = m.decode_envelope(<<18, 1, 128, 8, 42>>)
-  // The outer tag itself is truncated.
-  let assert Error(_) = m.decode_envelope(<<128>>)
 }

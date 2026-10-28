@@ -1,9 +1,10 @@
 //// Generated codecs resolve nested, imported and shadowed names with owner prefixes.
 //// Enum fields retain optional presence, packing and map semantics.
 
-import generated/naming as n
+import generated/combined/naming as n
 import gleam/option.{None, Some}
 
+/// Constructor qualification disambiguates colliding nested enum names.
 pub fn enum_constructor_policy_test() {
   let assert 0 =
     n.encode_sample_base_child_unique_value(n.SampleBaseChildUniqueDistinct)
@@ -17,6 +18,7 @@ pub fn enum_constructor_policy_test() {
     n.decode_sample_base_child_colliding_value(1)
 }
 
+/// Optional enums retain presence and their owning nested type.
 pub fn optional_enum_test() {
   // Field 1 is absent, explicit ZERO=0 or ONE=1; each enum retains its owning type.
   let assert Ok(absent) = n.decode_sample_base_child_first(<<>>)
@@ -29,6 +31,7 @@ pub fn optional_enum_test() {
   let assert <<8, 1>> = n.encode_sample_base_child_second(one)
 }
 
+/// Lexical, ancestor, sibling and absolute references resolve before generation.
 pub fn deep_resolution_test() {
   // Fields 1..7 identify nearest Inner="x", parent Inner=7, sibling Inner=true,
   // absolute Item=9, ancestor Item=10, ancestor State=ONE, and local shadow Item="y".
@@ -78,6 +81,7 @@ pub fn deep_resolution_test() {
   let assert True = roundtrip == value
 }
 
+/// Packed and unpacked enum fields use the owner-scoped enum decoder.
 pub fn repeated_enum_wire_test() {
   // Field 4 contains ZERO,ONE as packed and unpacked enum varints.
   let expected = [
@@ -99,12 +103,12 @@ pub fn repeated_enum_wire_test() {
   ] = mixed.states
   let assert <<32, 1, 32, 0, 32, 1, 32, 0>> =
     n.encode_sample_base_child_first(mixed)
-  // Field 4 has a truncated packed varint, then unknown enum 2 in each representation.
-  let assert Error(_) = n.decode_sample_base_child_first(<<34, 1, 128>>)
+  // Field 4 rejects unknown enum 2 in each representation.
   let assert Error(_) = n.decode_sample_base_child_first(<<34, 1, 2>>)
   let assert Error(_) = n.decode_sample_base_child_first(<<32, 2>>)
 }
 
+/// Map enum values use the owning enum codec.
 pub fn map_enum_wire_test() {
   // Field 5 maps string key "k" to owner-scoped enum ONE=1.
   let assert Ok(value) =

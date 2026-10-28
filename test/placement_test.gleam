@@ -13,6 +13,7 @@ fn add(registry, path, source) {
   registry
 }
 
+/// Assigns stable module owners and nested names independently of input order.
 pub fn ownership_and_order_test() {
   let registry =
     type_registry.new()
@@ -43,6 +44,7 @@ pub fn ownership_and_order_test() {
   let assert "Timestamp" = timestamp.local_type
 }
 
+/// Rejects local symbol collisions while allowing equal names in separate modules.
 pub fn local_collisions_test() {
   reject(
     "message Envelope { message Item {} } message EnvelopeItem {}",
@@ -81,6 +83,7 @@ fn reject(source, expected) {
   let assert True = string.contains(error, expected)
 }
 
+/// Rejects unsafe schema paths, invalid prefixes and colliding normalized module paths.
 pub fn unsafe_paths_test() {
   list.each(
     [

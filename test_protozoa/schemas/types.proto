@@ -22,10 +22,6 @@ message RepeatedTypes {
   repeated int32 numbers = 2;
   repeated bool flags = 3;
 }
-message OptionalTypes {
-  optional string maybe_string = 1;
-  optional int32 maybe_number = 2;
-}
 // Compact shape coverage: each primitive appears once per dispatch branch.
 message OptionalScalars {
   optional double double_value = 1;
@@ -110,8 +106,4 @@ message ChoiceScalars {
     string string_value = 14;
     bytes bytes_value = 15;
   }
-}
-message MapTypes {
-  map<string, string> string_map = 1;
-  map<int32, string> int_map = 2;
 }

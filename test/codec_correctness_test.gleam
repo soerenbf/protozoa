@@ -6,6 +6,7 @@ import protozoa/encode as e
 
 // Canonical protobuf vectors, independently checked with Python protobuf 6.33.5.
 // Values are literals so regeneration never depends on Python or parent packages.
+/// Verifies canonical signed integer encoding/decoding and supported unsigned limits.
 pub fn signed_boundary_test() {
   // Field 1 is int32 -1/min/max; negatives use sign-extended ten-byte varints.
   list.each(
@@ -55,6 +56,7 @@ pub fn signed_boundary_test() {
     d.run(<<8, 255, 255, 255, 255, 255, 255, 255, 15>>, d.uint64(1))
 }
 
+/// Rejects truncated or overflowing varints and out-of-range field numbers.
 pub fn malformed_wire_test() {
   // Reject, in order: truncated tag; field 1 truncated value; eleven-byte value;
   // overflowing tenth value byte; field zero; field number > 2^29−1;
@@ -76,6 +78,7 @@ pub fn malformed_wire_test() {
   )
 }
 
+/// Skips valid unknown fields and accepts non-minimal varints without losing known values.
 pub fn valid_unknown_test() {
   // Read field 1=7 after unknown varints numbered 2, reserved 19000 and maximum 2^29−1.
   let assert Ok(7) = d.run(<<16, 1, 8, 7>>, d.int32(1))
@@ -85,6 +88,7 @@ pub fn valid_unknown_test() {
   let assert Ok(7) = d.run(<<8, 135, 0>>, d.int32(1))
 }
 
+/// Verifies zigzag encoding/decoding and the ten-byte size of negative signed varints.
 pub fn signed_paths_test() {
   // Field 1 is sint32 min, -129, -1, 1, max: zigzag, not two's-complement varints.
   list.each(
@@ -108,6 +112,7 @@ pub fn signed_paths_test() {
 }
 
 @target(erlang)
+/// Verifies full-width int64 endpoints and uint64 maximum against canonical bytes.
 pub fn wide_integer_test() {
   // Field 1 is int64 min/max or uint64 max; these full-width values are Erlang-only.
   let assert <<8, 128, 128, 128, 128, 128, 128, 128, 128, 128, 1>> =
@@ -124,6 +129,7 @@ pub fn wide_integer_test() {
     d.run(<<8, 255, 255, 255, 255, 255, 255, 255, 255, 255, 1>>, d.uint64(1))
 }
 
+/// Decodes present signed values and applies defaults only when the field is absent.
 pub fn signed_default_test() {
   // Field 1=-1 is present, so signed defaults must decode rather than replace it.
   let data = <<8, 255, 255, 255, 255, 255, 255, 255, 255, 255, 1>>

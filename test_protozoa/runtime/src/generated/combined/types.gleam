@@ -39,13 +39,6 @@ pub type TypesRepeatedTypes {
   )
 }
 
-pub type TypesOptionalTypes {
-  TypesOptionalTypes(
-    maybe_string: option.Option(String),
-    maybe_number: option.Option(Int),
-  )
-}
-
 pub type TypesOptionalScalars {
   TypesOptionalScalars(
     double_value: option.Option(Float),
@@ -143,45 +136,6 @@ pub type TypesChoiceScalarsChoice {
 
 pub type TypesChoiceScalars {
   TypesChoiceScalars(choice: option.Option(TypesChoiceScalarsChoice))
-}
-
-pub type TypesMapTypes {
-  TypesMapTypes(
-    string_map: List(#(String, String)),
-    int_map: List(#(Int, String)),
-  )
-}
-
-pub fn encode_types_map_types(message: TypesMapTypes) -> BitArray {
-  let string_map_fields =
-    list.map(message.string_map, fn(pair) {
-      let #(key, value) = pair
-      encode.field(
-        1,
-        wire.LengthDelimited,
-        encode.length_delimited(
-          encode.message([
-            encode.string_field(1, key),
-            encode.string_field(2, value),
-          ]),
-        ),
-      )
-    })
-  let int_map_fields =
-    list.map(message.int_map, fn(pair) {
-      let #(key, value) = pair
-      encode.field(
-        2,
-        wire.LengthDelimited,
-        encode.length_delimited(
-          encode.message([
-            encode.int32_field(1, key),
-            encode.string_field(2, value),
-          ]),
-        ),
-      )
-    })
-  encode.message(list.flatten([string_map_fields, int_map_fields]))
 }
 
 pub fn encode_types_choice_scalars(message: TypesChoiceScalars) -> BitArray {
@@ -799,19 +753,6 @@ pub fn encode_types_optional_scalars(
   ])
 }
 
-pub fn encode_types_optional_types(message: TypesOptionalTypes) -> BitArray {
-  encode.message([
-    case message.maybe_string {
-      option.Some(value) -> encode.string_field(1, value)
-      option.None -> <<>>
-    },
-    case message.maybe_number {
-      option.Some(value) -> encode.int32_field(2, value)
-      option.None -> <<>>
-    },
-  ])
-}
-
 pub fn encode_types_repeated_types(message: TypesRepeatedTypes) -> BitArray {
   let strings_fields =
     list.map(message.strings, fn(v) { encode.string_field(1, v) })
@@ -843,58 +784,6 @@ pub fn encode_types_all_types(message: TypesAllTypes) -> BitArray {
       encode.length_delimited(message.bytes_field),
     ),
   ])
-}
-
-fn types_map_types_map_entry_1_decoder() -> fn(decode.Field) ->
-  Result(#(String, String), decode.DecodeError) {
-  fn(field) {
-    let entry_decoder = {
-      use key <- decode.then(decode.string_with_default(1, ""))
-      use value <- decode.then(decode.string_with_default(2, ""))
-      decode.success(#(key, value))
-    }
-    case decode.message_field(_, entry_decoder)(field) {
-      Ok(entry) -> Ok(entry)
-      Error(err) -> Error(err)
-    }
-  }
-}
-
-fn types_map_types_map_entry_2_decoder() -> fn(decode.Field) ->
-  Result(#(Int, String), decode.DecodeError) {
-  fn(field) {
-    let entry_decoder = {
-      use key <- decode.then(decode.int32_with_default(1, 0))
-      use value <- decode.then(decode.string_with_default(2, ""))
-      decode.success(#(key, value))
-    }
-    case decode.message_field(_, entry_decoder)(field) {
-      Ok(entry) -> Ok(entry)
-      Error(err) -> Error(err)
-    }
-  }
-}
-
-pub fn types_map_types_decoder() -> decode.Decoder(TypesMapTypes) {
-  use string_map <- decode.then(decode.map(
-    decode.repeated_field(1, fn(field) {
-      types_map_types_map_entry_1_decoder()(field)
-    }),
-    decode.map_entries,
-  ))
-  use int_map <- decode.then(decode.map(
-    decode.repeated_field(2, fn(field) {
-      types_map_types_map_entry_2_decoder()(field)
-    }),
-    decode.map_entries,
-  ))
-  decode.success(TypesMapTypes(string_map: string_map, int_map: int_map))
-}
-
-pub fn decode_types_map_types(
-  data: BitArray,
-) -> Result(TypesMapTypes, List(decode.DecodeError)) {
-  decode.run(data, types_map_types_decoder())
 }
 
 fn oneof_types_choice_scalars_choice_decoder() -> decode.Decoder(
@@ -1790,27 +1679,6 @@ pub fn decode_types_optional_scalars(
   data: BitArray,
 ) -> Result(TypesOptionalScalars, List(decode.DecodeError)) {
   decode.run(data, types_optional_scalars_decoder())
-}
-
-pub fn types_optional_types_decoder() -> decode.Decoder(TypesOptionalTypes) {
-  use maybe_string <- decode.then(decode.map(
-    decode.optional_field(1, decode.string_field),
-    option.from_result,
-  ))
-  use maybe_number <- decode.then(decode.map(
-    decode.optional_field(2, decode.int32_field),
-    option.from_result,
-  ))
-  decode.success(TypesOptionalTypes(
-    maybe_string: maybe_string,
-    maybe_number: maybe_number,
-  ))
-}
-
-pub fn decode_types_optional_types(
-  data: BitArray,
-) -> Result(TypesOptionalTypes, List(decode.DecodeError)) {
-  decode.run(data, types_optional_types_decoder())
 }
 
 pub fn types_repeated_types_decoder() -> decode.Decoder(TypesRepeatedTypes) {

@@ -5,6 +5,7 @@ import protozoa/internal/codegen
 import protozoa/internal/type_registry
 import protozoa/parser/file
 
+/// Reports unresolved field types across ordinary, optional, repeated, map and oneof fields.
 pub fn unresolved_types_return_diagnostics_test() {
   rejects("message A { Missing value = 1; }", "Unknown type: Missing")
   rejects("message A { optional Missing value = 1; }", "Unknown type: Missing")
@@ -20,6 +21,7 @@ pub fn unresolved_types_return_diagnostics_test() {
   rejects("message A { message B { Missing value = 1; } }", "scope: A.B")
 }
 
+/// Rejects declarations, fields and constructors that collide after name normalization.
 pub fn normalized_collisions_return_diagnostics_test() {
   rejects(
     "message FooBar {} message Foo { message Bar {} }",
@@ -40,6 +42,7 @@ pub fn normalized_collisions_return_diagnostics_test() {
   rejects("enum A { foo_bar = 0; FooBar = 1; }", "Generated name collision")
 }
 
+/// Rejects missing lexical and absolute references instead of matching unrelated suffixes.
 pub fn unrelated_suffix_does_not_resolve_test() {
   rejects(
     "message Other { message Inner {} } message A { Inner value = 1; }",
@@ -51,7 +54,7 @@ pub fn unrelated_suffix_does_not_resolve_test() {
   )
 }
 
-/// Every variant uses its owning type in types and codecs.
+/// Prefixes enum variants with their owning type in declarations and codec helpers.
 pub fn enum_constructor_collision_policy_test() {
   let output =
     generates(
@@ -68,7 +71,7 @@ pub fn enum_constructor_collision_policy_test() {
   let assert True = string.contains(output, "0 -> Ok(BZero)")
 }
 
-/// Distinct proto spellings that normalize identically qualify both owners.
+/// Keeps equal normalized variant names distinct when their enum owners differ.
 pub fn normalized_enum_variants_are_qualified_test() {
   let output = generates("enum A { foo_bar = 0; } enum B { FooBar = 0; }")
   let assert True = string.contains(output, "pub type A {\n  AFooBar\n}")
@@ -77,7 +80,7 @@ pub fn normalized_enum_variants_are_qualified_test() {
   let assert True = string.contains(output, "0 -> Ok(BFooBar)")
 }
 
-/// Qualification handles message/oneof constructors and secondary collisions.
+/// Keeps owner-prefixed enum variants distinct from message and oneof constructors.
 pub fn enum_constructor_message_oneof_and_cascade_collisions_test() {
   let output =
     generates(
